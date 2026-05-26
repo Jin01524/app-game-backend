@@ -12,14 +12,18 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: [
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : [
       'http://localhost:5173',
       'http://localhost:4173',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:4173',
-    ],
+    ];
+
+const io = new Server(server, {
+  cors: {
+    origin: ALLOWED_ORIGINS,
     credentials: true,
   }
 });
@@ -28,12 +32,7 @@ const PORT = process.env.PORT || 3001;
 
 app.use(express.json({ limit: '2mb' }));
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:4173',
-  ],
+  origin: ALLOWED_ORIGINS,
   credentials: true,
 }));
 
@@ -185,8 +184,8 @@ initDb().then(() => {
     }
   }, 10000);
 
-  server.listen(PORT, () => {
-    console.log(`🚀 Tệ Lạn 4.2 Backend running on http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Tệ Lạn 4.2 Backend running on port ${PORT}`);
   });
 }).catch((err) => {
   console.error('❌ Failed to initialize database:', err);
