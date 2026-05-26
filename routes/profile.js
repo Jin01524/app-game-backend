@@ -1,0 +1,350 @@
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const { getOne, getAll, runSql } = require('../db');
+const { parseJSON, addToBackpack, removeFromBackpack } = require('../utils');
+
+const router = express.Router();
+
+// Middleware: verify JWT (imported from auth.js pattern — reuse via req.user set by parent)
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Chưa đăng nhập' });
+  next();
+}
+
+/**
+ * PUT /api/profile/avatar
+ * Body: { avatar: "data:image/...;base64,..." }
+ * Stores base64 avatar string directly in DB (max ~500KB recommended)
+ */
+router.put('/avatar', requireAuth, (req, res) => {
+  const { avatar } = req.body;
+
+  if (!avatar) {
+    return res.status(400).json({ error: 'Thiếu dữ liệu ảnh đại diện' });
+  }
+
+  // Basic validation — must be a data URL
+  if (!avatar.startsWith('data:image/')) {
+    return res.status(400).json({ error: 'Định dạng ảnh không hợp lệ' });
+  }
+
+  // Rough size check: base64 string > ~700KB → reject
+  if (avatar.length > 700000) {
+    return res.status(400).json({ error: 'Ảnh quá lớn (tối đa ~500KB)' });
+  }
+
+  runSql('UPDATE users SET avatar = ? WHERE id = ?', [avatar, req.user.id]);
+
+  const updated = getOne('SELECT id, username, display_name, avatar, created_at FROM users WHERE id = ?', [req.user.id]);
+  res.json({
+    message: 'Cập nhật ảnh đại diện thành công',
+    avatar: updated.avatar,
+  });
+});
+
+/**
+ * DELETE /api/profile/avatar
+ * Removes avatar (reset to default)
+ */
+router.delete('/avatar', requireAuth, (req, res) => {
+  runSql('UPDATE users SET avatar = NULL WHERE id = ?', [req.user.id]);
+  res.json({ message: 'Đã xóa ảnh đại diện' });
+});
+
+/**
+ * PUT /api/profile/password
+ * Body: { currentPassword, newPassword }
+ */
+router.put('/password', requireAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+  }
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: 'Mật khẩu mới phải khác mật khẩu hiện tại' });
+  }
+
+  const user = getOne('SELECT * FROM users WHERE id = ?', [req.user.id]);
+  if (!user) {
+    return res.status(404).json({ error: 'Người dùng không tồn tại' });
+  }
+
+  const isCurrentValid = bcrypt.compareSync(currentPassword, user.password_hash);
+  if (!isCurrentValid) {
+    return res.status(401).json({ error: 'Mật khẩu hiện tại không đúng' });
+  }
+
+  const newHash = bcrypt.hashSync(newPassword, 10);
+  runSql('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, req.user.id]);
+
+  res.json({ message: 'Đổi mật khẩu thành công' });
+});
+
+/**
+ * POST /api/profile/game/score
+ * Body: { goals: number }
+ * Adds 2 xu per goal to the user's account.
+ */
+router.post('/game/score', requireAuth, (req, res) => {
+  const { goals } = req.body;
+  if (typeof goals !== 'number' || goals <= 0 || goals > 100) {
+    return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+  }
+
+  const xuEarned = goals * 2;
+  runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [xuEarned, req.user.id]);
+  
+  const user = getOne('SELECT xu FROM users WHERE id = ?', [req.user.id]);
+  res.json({ message: 'OK', xu: user.xu, earned: xuEarned });
+});
+
+/**
+ * GET /api/profile/game/settings
+ * Get current game settings
+ */
+router.get('/game/settings', requireAuth, (req, res) => {
+  const settingsRows = require('../db').getAll('SELECT key, value FROM settings');
+  const settings = {};
+  settingsRows.forEach(r => settings[r.key] = parseFloat(r.value) || r.value);
+  
+  // Apply defaults if missing
+  if (!settings.gkBaseSpeed) settings.gkBaseSpeed = 1.2;
+  if (!settings.goalWidth) settings.goalWidth = 80;
+  if (!settings.aimSpeed) settings.aimSpeed = 2.0;
+
+  res.json(settings);
+});
+
+/**
+ * GET /api/profile/users/status
+ * Get online status of all users
+ */
+router.get('/users/status', requireAuth, (req, res) => {
+  const { getAll } = require('../db');
+  const users = getAll('SELECT id, username, display_name, avatar, last_online FROM users ORDER BY last_online DESC NULLS LAST');
+  res.json(users);
+});
+
+/**
+ * POST /api/profile/character
+ * Body: { headColor, hairColor, bodyColor, legsColor, shoeColor }
+ */
+router.post('/character', requireAuth, (req, res) => {
+  const { headColor, hairColor, bodyColor, legsColor, shoeColor } = req.body;
+  
+  // Basic validation (hex colors)
+  const hexRegex = /^#([0-9A-F]{3}){1,2}$/i;
+  const hd = hexRegex.test(headColor) ? headColor : '#ffccaa';
+  const hr = hexRegex.test(hairColor) ? hairColor : '#8b4513';
+  const bd = hexRegex.test(bodyColor) ? bodyColor : '#3b82f6';
+  const lg = hexRegex.test(legsColor) ? legsColor : '#1e293b';
+  const sh = hexRegex.test(shoeColor) ? shoeColor : '#000000';
+
+  runSql(
+    'UPDATE users SET char_head_color = ?, char_hair_color = ?, char_body_color = ?, char_legs_color = ?, char_shoe_color = ? WHERE id = ?',
+    [hd, hr, bd, lg, sh, req.user.id]
+  );
+
+  res.json({ message: 'Đã lưu cấu hình nhân vật' });
+});
+
+/**
+ * POST /api/profile/transfer
+ * Body: { itemId: string, amount: number, direction: 'to_backpack' | 'to_storage' }
+ */
+router.post('/transfer', requireAuth, (req, res) => {
+  const { itemId, amount, direction } = req.body;
+  if (!itemId || !amount || amount <= 0) return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+
+  const userId = req.user.id;
+  const user = getOne('SELECT backpack, inventory_slots FROM users WHERE id = ?', [userId]);
+  let backpack = parseJSON(user.backpack, [null, null]);
+
+  if (direction === 'to_backpack') {
+    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+    if (!invItem || invItem.quantity <= 0) return res.status(400).json({ error: 'Không có vật phẩm trong kho' });
+    
+    const takeAmount = Math.min(amount, invItem.quantity);
+    const result = addToBackpack(backpack, itemId, takeAmount);
+    
+    const actualTaken = takeAmount - result.remaining;
+    if (actualTaken <= 0) return res.status(400).json({ error: 'Balo đã đầy hoặc không chứa được thêm' });
+    
+    backpack = result.backpack;
+    runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+    
+    if (invItem.quantity === actualTaken) {
+      runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+    } else {
+      runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [actualTaken, userId, itemId]);
+    }
+    
+    res.json({ message: `Đã chuyển ${actualTaken} vật phẩm vào balo`, backpack });
+  } else if (direction === 'to_storage') {
+    // Count BEFORE removing (removeFromBackpack mutates the array in-place)
+    const countBefore = backpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
+    const removeResult = removeFromBackpack(backpack, itemId, amount);
+    backpack = removeResult.backpack;
+    const countAfter = backpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
+    const actualRemoved = countBefore - countAfter;
+    
+    if (actualRemoved <= 0) return res.status(400).json({ error: 'Không có vật phẩm trong balo' });
+    
+    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+    // Check storage limits
+    const slots = user.inventory_slots || 5;
+    const allItems = getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    let usedSlots = allItems.length;
+    
+    const hasItem = allItems.some(i => i.item_id === itemId);
+    if (!hasItem && usedSlots >= slots) {
+      return res.status(400).json({ error: 'Kho đã đầy, không thể cất thêm' });
+    }
+    
+    runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+    if (invItem) {
+      runSql('UPDATE user_inventory SET quantity = quantity + ? WHERE user_id = ? AND item_id = ?', [actualRemoved, userId, itemId]);
+    } else {
+      runSql('INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, ?, ?)', [userId, itemId, actualRemoved]);
+    }
+    
+    res.json({ message: `Đã cất ${actualRemoved} vật phẩm vào kho`, backpack });
+  } else {
+    res.status(400).json({ error: 'Hành động không hợp lệ' });
+  }
+});
+
+/**
+ * POST /api/profile/discard
+ * Body: { itemId: string, amount: number, source: 'backpack' | 'storage' }
+ */
+router.post('/discard', requireAuth, (req, res) => {
+  const { itemId, amount, source } = req.body;
+  if (!itemId || !amount || amount <= 0) return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+
+  const userId = req.user.id;
+  if (source === 'backpack') {
+    const user = getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
+    let backpack = parseJSON(user.backpack, [null, null]);
+    
+    const countBefore = backpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
+    const takeAmount = Math.min(amount, countBefore);
+    if (takeAmount <= 0) return res.status(400).json({ error: 'Không có vật phẩm để vứt' });
+    
+    backpack = removeFromBackpack(backpack, itemId, takeAmount).backpack;
+    runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+    res.json({ message: `Đã vứt ${takeAmount} vật phẩm`, backpack });
+  } else if (source === 'storage') {
+    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+    if (!invItem || invItem.quantity <= 0) return res.status(400).json({ error: 'Không có vật phẩm trong kho' });
+    
+    const takeAmount = Math.min(amount, invItem.quantity);
+    if (invItem.quantity === takeAmount) {
+      runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+    } else {
+      runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [takeAmount, userId, itemId]);
+    }
+    res.json({ message: `Đã vứt ${takeAmount} vật phẩm` });
+  } else {
+    res.status(400).json({ error: 'Nguồn không hợp lệ' });
+  }
+});
+
+/**
+ * POST /api/profile/trade/item
+ * Body: { targetUsername: string, itemId: string, amount: number }
+ */
+router.post('/trade/item', requireAuth, (req, res) => {
+  const { targetUsername, itemId, amount } = req.body;
+  const parsedAmount = parseInt(amount, 10);
+  if (!targetUsername || !itemId || !parsedAmount || !Number.isInteger(parsedAmount) || parsedAmount <= 0) {
+    return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+  }
+
+  const { getOne, runSql } = require('../db');
+  
+  if (targetUsername === req.user.username) {
+    return res.status(400).json({ error: 'Không thể giao dịch với chính mình' });
+  }
+
+  const targetUser = getOne('SELECT id, backpack, inventory_slots FROM users WHERE username = ?', [targetUsername]);
+  if (!targetUser) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+  const targetMaxSlots = targetUser.inventory_slots || 5;
+
+  const senderId = req.user.id;
+  const sender = getOne('SELECT backpack, inventory_slots FROM users WHERE id = ?', [senderId]);
+  const senderMaxSlots = sender.inventory_slots || 5;
+  let senderBackpack = parseJSON(sender.backpack, Array(senderMaxSlots).fill(null));
+
+  // Check sender items
+  const countBefore = senderBackpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
+  const takeAmount = Math.min(parsedAmount, countBefore);
+  if (takeAmount <= 0) return res.status(400).json({ error: 'Không có đủ vật phẩm trong balo' });
+
+  // Remove from sender
+  const removeResult = removeFromBackpack(senderBackpack, itemId, takeAmount);
+  senderBackpack = removeResult.backpack;
+
+  // Add to target
+  let targetBackpack = parseJSON(targetUser.backpack, Array(targetMaxSlots).fill(null));
+  const addResult = addToBackpack(targetBackpack, itemId, takeAmount, targetMaxSlots);
+  
+  const actualTransferred = takeAmount - addResult.remaining;
+  if (actualTransferred <= 0) {
+    return res.status(400).json({ error: 'Balo người nhận đã đầy' });
+  }
+
+  // If actualTransferred < takeAmount, give back remaining to sender
+  if (addResult.remaining > 0) {
+    senderBackpack = addToBackpack(senderBackpack, itemId, addResult.remaining, senderMaxSlots).backpack;
+  }
+
+  targetBackpack = addResult.backpack;
+
+  runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(senderBackpack), senderId]);
+  runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(targetBackpack), targetUser.id]);
+
+  res.json({ message: `Đã gửi ${actualTransferred} vật phẩm cho ${targetUsername}`, backpack: senderBackpack });
+});
+
+/**
+ * POST /api/profile/trade/xu
+ * Body: { targetUsername: string, amount: number }
+ */
+router.post('/trade/xu', requireAuth, (req, res) => {
+  const { targetUsername, amount } = req.body;
+  const parsedAmount = parseInt(amount, 10);
+  if (!targetUsername || !parsedAmount || !Number.isInteger(parsedAmount) || parsedAmount <= 0) {
+    return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+  }
+
+  const { getOne, runSql } = require('../db');
+  
+  if (targetUsername === req.user.username) {
+    return res.status(400).json({ error: 'Không thể giao dịch với chính mình' });
+  }
+
+  const targetUser = getOne('SELECT id FROM users WHERE username = ?', [targetUsername]);
+  if (!targetUser) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+
+  const senderId = req.user.id;
+  const sender = getOne('SELECT xu FROM users WHERE id = ?', [senderId]);
+
+  if (sender.xu < parsedAmount) {
+    return res.status(400).json({ error: 'Không đủ xu' });
+  }
+
+  runSql('UPDATE users SET xu = xu - ? WHERE id = ?', [parsedAmount, senderId]);
+  runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [parsedAmount, targetUser.id]);
+
+  const newSenderXu = sender.xu - parsedAmount;
+  res.json({ message: `Đã gửi ${parsedAmount} xu cho ${targetUsername}`, xu: newSenderXu });
+});
+
+module.exports = router;
