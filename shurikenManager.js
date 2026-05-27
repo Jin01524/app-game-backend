@@ -462,16 +462,34 @@ function setupShurikenSockets(io) {
     });
 
     socket.on('shuriken_start_game', (payload) => {
+      try {
         if (payload && payload.user) socket.user = payload.user;
         const { hostUsername } = payload || {};
-      if (!socket.user || socket.user.username !== hostUsername) return;
-      const room = rooms[hostUsername];
-      if (!room || room.status !== 'waiting') return;
-      
-      const allReady = Object.values(room.players).every(p => p.isReady);
-      if (!allReady) return;
+        if (!socket.user || socket.user.username !== hostUsername) {
+          socket.emit('shuriken_error', 'Invalid user or not host in start_game');
+          return;
+        }
+        const room = rooms[hostUsername];
+        if (!room) {
+          socket.emit('shuriken_error', 'Room not found in start_game');
+          return;
+        }
+        if (room.status !== 'waiting') {
+          socket.emit('shuriken_error', 'Room not waiting in start_game: ' + room.status);
+          return;
+        }
+        
+        const allReady = Object.values(room.players).every(p => p.isReady);
+        if (!allReady) {
+          socket.emit('shuriken_error', 'Not all players are ready in start_game');
+          return;
+        }
 
-      startGameLoop(io, hostUsername);
+        startGameLoop(io, hostUsername);
+      } catch (err) {
+        console.error('Start game error:', err);
+        socket.emit('shuriken_error', 'Server error in start_game: ' + err.message);
+      }
     });
 
     socket.on('shuriken_player_move', (payload) => {
