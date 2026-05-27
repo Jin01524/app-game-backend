@@ -307,7 +307,8 @@ function endGame(io, hostUsername) {
 function setupShurikenSockets(io) {
   io.on('connection', (socket) => {
     
-    socket.on('shuriken_create_room', () => {
+    socket.on('shuriken_create_room', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
       if (!socket.user) return;
       const hostUsername = socket.user.username;
       
@@ -328,7 +329,9 @@ function setupShurikenSockets(io) {
       broadcastState(io, hostUsername);
     });
 
-    socket.on('shuriken_join_room', ({ hostUsername }) => {
+    socket.on('shuriken_join_room', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
       if (!socket.user) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return; // Can only join if waiting
@@ -346,7 +349,9 @@ function setupShurikenSockets(io) {
       broadcastState(io, hostUsername);
     });
 
-    socket.on('shuriken_leave_room', ({ hostUsername }) => {
+    socket.on('shuriken_leave_room', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
       if (!socket.user) return;
       const room = rooms[hostUsername];
       if (!room) return;
@@ -373,7 +378,9 @@ function setupShurikenSockets(io) {
       broadcastState(io, hostUsername);
     });
 
-    socket.on('shuriken_add_bot', ({ hostUsername }) => {
+    socket.on('shuriken_add_bot', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
       if (!socket.user || socket.user.username !== hostUsername) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return;
@@ -404,7 +411,9 @@ function setupShurikenSockets(io) {
       broadcastState(io, hostUsername);
     });
 
-    socket.on('shuriken_remove_bot', ({ hostUsername, botId }) => {
+    socket.on('shuriken_remove_bot', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername, botId } = payload || {};
       if (!socket.user || socket.user.username !== hostUsername) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return;
@@ -415,7 +424,9 @@ function setupShurikenSockets(io) {
       }
     });
 
-    socket.on('shuriken_ready', ({ hostUsername }) => {
+    socket.on('shuriken_ready', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
       if (!socket.user) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return;
@@ -426,7 +437,9 @@ function setupShurikenSockets(io) {
       }
     });
 
-    socket.on('shuriken_start_game', ({ hostUsername }) => {
+    socket.on('shuriken_start_game', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
       if (!socket.user || socket.user.username !== hostUsername) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return;
@@ -437,7 +450,9 @@ function setupShurikenSockets(io) {
       startGameLoop(io, hostUsername);
     });
 
-    socket.on('shuriken_player_move', ({ hostUsername, x, y, vy, isWalking, dirX }) => {
+    socket.on('shuriken_player_move', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername, x, y, vy, isWalking, dirX } = payload || {};
       if (!socket.user) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'playing') return;
@@ -452,7 +467,9 @@ function setupShurikenSockets(io) {
       }
     });
 
-    socket.on('shuriken_shoot', ({ hostUsername, angle }) => {
+    socket.on('shuriken_shoot', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername, angle } = payload || {};
       if (!socket.user) return;
       const room = rooms[hostUsername];
       if (!room || room.status !== 'playing') return;
@@ -500,7 +517,8 @@ function setupShurikenSockets(io) {
     });
 
     // We also need to send the list of open rooms
-    socket.on('shuriken_get_rooms', () => {
+    socket.on('shuriken_get_rooms', (payload) => {
+        if (payload && payload.user) socket.user = payload.user;
       const openRooms = Object.values(rooms)
         .filter(r => r.status === 'waiting')
         .map(r => ({
