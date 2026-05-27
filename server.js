@@ -8,6 +8,7 @@ const { parseJSON, addToBackpack } = require('./utils');
 const { setupTradeSockets } = require('./tradeManager');
 const { setupTienLenSockets } = require('./tienLenManager');
 const { setupXiDachSockets } = require('./xiDachManager');
+const { setupShurikenSockets } = require('./shurikenManager');
 
 dotenv.config();
 
@@ -72,6 +73,7 @@ initDb().then(() => {
   setupTradeSockets(io);
   setupTienLenSockets(io);
   setupXiDachSockets(io);
+  setupShurikenSockets(io);
 
   const houseRooms = {};
 
