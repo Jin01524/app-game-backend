@@ -23,7 +23,7 @@ function getRoom(hostUsername) {
 function broadcastState(io, hostUsername) {
   const room = rooms[hostUsername];
   if (!room) return;
-  io.to(hostUsername).emit('shuriken_state', {
+  io.to(`shuriken_${hostUsername}`).emit('shuriken_state', {
     status: room.status,
     timer: room.timer,
     players: room.players,
@@ -101,7 +101,7 @@ function updateGameLogic(io, hostUsername) {
           p.ammo = Math.min(p.ammo + 2, p.maxAmmo); // give them the ammo immediately
         }
       });
-      io.to(hostUsername).emit('shuriken_event', { type: 'sudden_death' });
+      io.to(`shuriken_${hostUsername}`).emit('shuriken_event', { type: 'sudden_death' });
     }
   }
   room.lastTick = now;
@@ -140,7 +140,7 @@ function updateGameLogic(io, hostUsername) {
         const attacker = room.players[proj.ownerId];
         if (attacker) attacker.hits += 1;
         
-        io.to(hostUsername).emit('shuriken_event', { type: 'hit', targetId, attackerId: proj.ownerId });
+        io.to(`shuriken_${hostUsername}`).emit('shuriken_event', { type: 'hit', targetId, attackerId: proj.ownerId });
 
         if (target.hp <= 0) {
           target.hp = 0;
@@ -149,7 +149,7 @@ function updateGameLogic(io, hostUsername) {
             attacker.kills += 1;
             attacker.hp = Math.min(attacker.hp + 1, 5); // Heal on kill
           }
-          io.to(hostUsername).emit('shuriken_event', { type: 'kill', targetId, attackerId: proj.ownerId });
+          io.to(`shuriken_${hostUsername}`).emit('shuriken_event', { type: 'kill', targetId, attackerId: proj.ownerId });
         }
         break;
       }
