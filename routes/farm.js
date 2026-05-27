@@ -2,6 +2,7 @@ const express = require('express');
 const { getOne, getAll, runSql } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, removeFromBackpack, getBackpackItemCount, addToBackpack } = require('../utils');
+const { simulateCowProgress } = require('../cowSimulation');
 
 const router = express.Router();
 
@@ -314,10 +315,22 @@ router.post('/feed', requireAuth, (req, res) => {
   const takeAmount = Math.min(amount, romCount + romInvCount);
   if (takeAmount <= 0) return res.status(400).json({ error: 'Không có rơm trong balo hoặc kho' });
 
-  const farm = getOne('SELECT cage_inventory FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = getOne('SELECT animals_data, cage_inventory, cage_products FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm) return res.status(400).json({ error: 'Chưa có chuồng' });
   
-  let cageInv = parseJSON(farm.cage_inventory, [null, null, null, null]);
+  let animalsData = parseJSON(farm.animals_data, []);
+  let cageInventory = parseJSON(farm.cage_inventory, [null, null, null, null]);
+  let cageProducts = parseJSON(farm.cage_products, []);
+
+  // Simulate progress BEFORE adding straw to prevent cows from consuming new straw retroactively
+  const now = Date.now();
+  const simulation = simulateCowProgress(animalsData, cageInventory, now);
+  animalsData = simulation.animalsData;
+  let cageInv = simulation.cageInventory;
+  if (simulation.drops && simulation.drops.length > 0) {
+    simulation.drops.forEach(d => cageProducts.push(d));
+    runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(cageProducts), userId]);
+  }
   
   let remainingToAdd = takeAmount;
   // Fill existing slots
@@ -362,7 +375,7 @@ router.post('/feed', requireAuth, (req, res) => {
     }
   }
   
-  runSql('UPDATE user_farms SET cage_inventory = ? WHERE user_id = ?', [JSON.stringify(cageInv), userId]);
+  runSql('UPDATE user_farms SET cage_inventory = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(cageInv), JSON.stringify(animalsData), userId]);
   
   res.json({ message: `Đã bỏ ${actualAdded} rơm vào chuồng`, backpack, cage_inventory: cageInv });
 });
