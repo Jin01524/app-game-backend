@@ -47,6 +47,8 @@ function startGameLoop(io, hostUsername) {
   room.timer = 90; // 1m30s
   room.status = 'playing';
   room.projectiles = [];
+  room.lastTimerUpdate = Date.now();
+  room.lastTick = Date.now();
 
   // Reset player stats
   Object.values(room.players).forEach(p => {
@@ -62,6 +64,8 @@ function startGameLoop(io, hostUsername) {
     p.y = 100;
     p.vx = 0;
     p.vy = 0;
+    p.dirX = 1;
+    p.isWalking = false;
     p.isDead = false;
     p.isAfk = false;
   });
@@ -183,6 +187,8 @@ function updateBots(room, dt) {
     // Simple Bot AI
     if (!bot.aiState) bot.aiState = { dir: 1, lastThink: 0, lastShoot: 0 };
     
+    bot.dirX = bot.aiState.dir;
+    bot.isWalking = true;
     bot.x += bot.aiState.dir * 150 * dt; // walk speed
     
     // Bounds check
