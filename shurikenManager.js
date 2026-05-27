@@ -435,6 +435,42 @@ function setupShurikenSockets(io) {
       }
     });
 
+    socket.on('shuriken_return_lobby', (payload) => {
+      try {
+        if (payload && payload.user) socket.user = payload.user;
+        const { hostUsername } = payload || {};
+        if (!socket.user) {
+          socket.emit('shuriken_error', 'Invalid user');
+          return;
+        }
+        if (socket.user.username !== hostUsername) {
+          socket.emit('shuriken_error', 'Not host');
+          return;
+        }
+        
+        const room = rooms[hostUsername];
+        if (!room) {
+          socket.emit('shuriken_error', 'Room not found');
+          return;
+        }
+        
+        room.status = 'waiting';
+        // Reset readiness
+        Object.values(room.players).forEach(p => {
+          if (p.isBot) {
+            p.isReady = true;
+          } else {
+            p.isReady = (p.username === hostUsername);
+          }
+        });
+
+        broadcastState(io, hostUsername);
+      } catch (err) {
+        console.error('Return lobby error:', err);
+        socket.emit('shuriken_error', 'Server error: ' + err.message);
+      }
+    });
+
     socket.on('shuriken_remove_bot', (payload) => {
         if (payload && payload.user) socket.user = payload.user;
         const { hostUsername, botId } = payload || {};
