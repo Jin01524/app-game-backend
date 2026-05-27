@@ -379,36 +379,54 @@ function setupShurikenSockets(io) {
     });
 
     socket.on('shuriken_add_bot', (payload) => {
+      try {
         if (payload && payload.user) socket.user = payload.user;
         const { hostUsername } = payload || {};
-      if (!socket.user || socket.user.username !== hostUsername) return;
-      const room = rooms[hostUsername];
-      if (!room || room.status !== 'waiting') return;
+        if (!socket.user || socket.user.username !== hostUsername) {
+          socket.emit('shuriken_error', 'Invalid user or not host');
+          return;
+        }
+        const room = rooms[hostUsername];
+        if (!room) {
+          socket.emit('shuriken_error', 'Room not found');
+          return;
+        }
+        if (room.status !== 'waiting') {
+          socket.emit('shuriken_error', 'Room not waiting');
+          return;
+        }
 
-      const botCount = Object.values(room.players).filter(p => p.isBot).length;
-      if (botCount >= 4) return;
+        const botCount = Object.values(room.players).filter(p => p.isBot).length;
+        if (botCount >= 4) {
+          socket.emit('shuriken_error', 'Max bots reached');
+          return;
+        }
 
-      const botId = `bot_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-      room.players[botId] = {
-        id: botId,
-        username: botId,
-        displayName: botNames[Math.floor(Math.random() * botNames.length)],
-        isBot: true,
-        isReady: true
-      };
+        const botId = `bot_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+        room.players[botId] = {
+          id: botId,
+          username: botId,
+          displayName: botNames[Math.floor(Math.random() * botNames.length)],
+          isBot: true,
+          isReady: true
+        };
 
-      // Recalculate bot difficulty (1/3 Hard, 2/3 Easy). 1 bot = Hard.
-      const bots = Object.values(room.players).filter(p => p.isBot);
-      if (bots.length === 1) {
-        bots[0].difficulty = 'hard';
-      } else {
-        const hardCount = Math.ceil(bots.length / 3);
-        bots.forEach((b, idx) => {
-          b.difficulty = idx < hardCount ? 'hard' : 'easy';
-        });
+        // Recalculate bot difficulty (1/3 Hard, 2/3 Easy). 1 bot = Hard.
+        const bots = Object.values(room.players).filter(p => p.isBot);
+        if (bots.length === 1) {
+          bots[0].difficulty = 'hard';
+        } else {
+          const hardCount = Math.ceil(bots.length / 3);
+          bots.forEach((b, idx) => {
+            b.difficulty = idx < hardCount ? 'hard' : 'easy';
+          });
+        }
+
+        broadcastState(io, hostUsername);
+      } catch (err) {
+        console.error('Add bot error:', err);
+        socket.emit('shuriken_error', 'Server error: ' + err.message);
       }
-
-      broadcastState(io, hostUsername);
     });
 
     socket.on('shuriken_remove_bot', (payload) => {
