@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const { parseJSON, addToBackpack } = require('./utils');
 const { setupTradeSockets } = require('./tradeManager');
 const { setupTienLenSockets } = require('./tienLenManager');
+const { setupXiDachSockets } = require('./xiDachManager');
 
 dotenv.config();
 
@@ -70,6 +71,7 @@ initDb().then(() => {
 
   setupTradeSockets(io);
   setupTienLenSockets(io);
+  setupXiDachSockets(io);
 
   const houseRooms = {};
 
