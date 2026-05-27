@@ -59,7 +59,7 @@ function startGameLoop(io, hostUsername) {
     p.taken = 0;
     p.kills = 0;
     p.isInvulnerable = true;
-    p.invulnerableTimer = 3;
+    p.invulnerableTimer = 1;
     p.x = 200 + Math.random() * 400; // spawn in middle
     p.y = 100;
     p.vx = 0;
