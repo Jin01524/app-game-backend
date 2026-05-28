@@ -3,7 +3,9 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres'
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres',
+  // Force IPv4 to avoid ENETUNREACH on Render.com (which doesn't support IPv6 outbound)
+  family: 4
 });
 
 // Auto-convert SQLite '?' to Postgres '$1', '$2', etc.
