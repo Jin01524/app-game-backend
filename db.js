@@ -1,11 +1,13 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const dns = require('dns');
 require('dotenv').config();
 
+// Force IPv4 DNS resolution - Render.com does not support IPv6 outbound connections
+dns.setDefaultResultOrder('ipv4first');
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres',
-  // Force IPv4 to avoid ENETUNREACH on Render.com (which doesn't support IPv6 outbound)
-  family: 4
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres'
 });
 
 // Auto-convert SQLite '?' to Postgres '$1', '$2', etc.
