@@ -14,15 +14,16 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const ALLOWED_ORIGINS_DEFAULT = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173',
+  'https://te-lan-42.vercel.app',
+];
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : [
-      'http://localhost:5173',
-      'http://localhost:4173',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:4173',
-      'https://te-lan-42.vercel.app',
-    ];
+  ? [...new Set([...ALLOWED_ORIGINS_DEFAULT, ...process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim().replace(/\/$/, ''))])]
+  : ALLOWED_ORIGINS_DEFAULT;
 
 const io = new Server(server, {
   cors: {
