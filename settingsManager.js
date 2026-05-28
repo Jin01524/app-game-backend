@@ -13,17 +13,17 @@ const defaultSettings = {
   market_rom_price: 5
 };
 
-function loadSettings() {
-  const rows = getAll('SELECT key, value FROM settings');
+async function loadSettings() {
+  const rows = await getAll('SELECT key, value FROM settings');
   rows.forEach(row => {
     settingsCache[row.key] = row.value;
   });
   
   // Set defaults for missing settings
-  Object.keys(defaultSettings).forEach(key => {
+  Object.keys(defaultSettings).forEach(async key => {
     if (settingsCache[key] === undefined) {
       settingsCache[key] = defaultSettings[key];
-      runSql('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, defaultSettings[key].toString()]);
+      await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [key, defaultSettings[key].toString()]);
     }
   });
   console.log('Settings loaded:', settingsCache);
@@ -39,9 +39,9 @@ function getSetting(key, def) {
   return def !== undefined ? def : defaultSettings[key];
 }
 
-function setSetting(key, value) {
+async function setSetting(key, value) {
   settingsCache[key] = value.toString();
-  runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value.toString()]);
+  await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, value.toString()]);
 }
 
 function getAllSettings() {

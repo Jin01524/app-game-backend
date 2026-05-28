@@ -7,9 +7,9 @@ const { parseJSON, addToBackpack } = require('../utils');
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // Helper to get or calculate current market state
-function getMarketState() {
-  let priceRow = getOne("SELECT value FROM settings WHERE key = 'market_rice_price'");
-  let lastUpdateRow = getOne("SELECT value FROM settings WHERE key = 'market_last_update'");
+async function getMarketState() {
+  let priceRow = await getOne("SELECT value FROM settings WHERE key = 'market_rice_price'");
+  let lastUpdateRow = await getOne("SELECT value FROM settings WHERE key = 'market_last_update'");
 
   let price = priceRow ? parseInt(priceRow.value) : null;
   let lastUpdate = lastUpdateRow ? parseInt(lastUpdateRow.value) : null;
@@ -25,8 +25,8 @@ function getMarketState() {
     // Using `now` is simpler.
     lastUpdate = now;
 
-    runSql("INSERT OR REPLACE INTO settings (key, value) VALUES ('market_rice_price', ?)", [price.toString()]);
-    runSql("INSERT OR REPLACE INTO settings (key, value) VALUES ('market_last_update', ?)", [lastUpdate.toString()]);
+    await runSql("INSERT INTO settings (key, value) VALUES ('market_rice_price', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [price.toString()]);
+    await runSql("INSERT INTO settings (key, value) VALUES ('market_last_update', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [lastUpdate.toString()]);
   }
 
   const nextUpdate = lastUpdate + UPDATE_INTERVAL_MS;
@@ -35,12 +35,12 @@ function getMarketState() {
   return { price, nextUpdate, timeRemainingMs };
 }
 
-router.get('/', (req, res) => {
-  const market = getMarketState();
+router.get('/', async (req, res) => {
+  const market = await getMarketState();
   res.json({ market });
 });
 
-router.post('/sell', (req, res) => {
+router.post('/sell', async (req, res) => {
   const userId = req.user.id;
   const { quantity } = req.body;
   const sellQty = parseInt(quantity);
@@ -50,38 +50,38 @@ router.post('/sell', (req, res) => {
   }
 
   // Check inventory
-  const item = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+  const item = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
   if (!item || item.quantity < sellQty) {
     return res.status(400).json({ error: 'Không đủ lúa để bán' });
   }
 
-  const market = getMarketState();
+  const market = await getMarketState();
   const totalEarned = sellQty * market.price;
 
   // Deduct item
-  runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [sellQty, userId, 'lua']);
+  await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [sellQty, userId, 'lua']);
   
   // Add money
-  runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
+  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
 
   // Clean up inventory if zero
-  const updatedItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+  const updatedItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
   if (updatedItem && updatedItem.quantity <= 0) {
-    runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+    await runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
   }
 
   // Get new user state
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
 
   res.json({ success: true, earned: totalEarned, currentXu: user.xu });
 });
 
-router.post('/buy-animal', (req, res) => {
+router.post('/buy-animal', async (req, res) => {
   const userId = req.user.id;
   const { animal } = req.body;
   if (animal !== 'cow') return res.status(400).json({ error: 'Động vật không hợp lệ' });
 
-  const user = getOne('SELECT xu, backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu, backpack FROM users WHERE id = ?', [userId]);
   const cowPrice = settingsManager.getSetting('market_cow_price', 200);
   if (user.xu < cowPrice) return res.status(400).json({ error: `Không đủ xu (Cần ${cowPrice} xu)` });
 
@@ -92,12 +92,12 @@ router.post('/buy-animal', (req, res) => {
   }
 
   // Deduct Xu and save backpack
-  runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cowPrice, JSON.stringify(result.backpack), userId]);
+  await runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cowPrice, JSON.stringify(result.backpack), userId]);
 
   res.json({ message: 'Mua bò thành công!', xu: user.xu - cowPrice, backpack: result.backpack });
 });
 
-router.post('/buy-item', (req, res) => {
+router.post('/buy-item', async (req, res) => {
   const userId = req.user.id;
   const { itemId, quantity } = req.body;
   
@@ -107,7 +107,7 @@ router.post('/buy-item', (req, res) => {
 
   const romPrice = settingsManager.getSetting('market_rom_price', 5);
   const cost = quantity * romPrice;
-  const user = getOne('SELECT xu, backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu, backpack FROM users WHERE id = ?', [userId]);
   if (user.xu < cost) return res.status(400).json({ error: `Không đủ xu (Cần ${cost} xu)` });
 
   let backpack = parseJSON(user.backpack, [null, null]);
@@ -117,7 +117,7 @@ router.post('/buy-item', (req, res) => {
   }
 
   // Deduct Xu and save backpack
-  runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cost, JSON.stringify(result.backpack), userId]);
+  await runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cost, JSON.stringify(result.backpack), userId]);
 
   res.json({ message: `Mua ${quantity} ${itemId} thành công!`, xu: user.xu - cost, backpack: result.backpack });
 });

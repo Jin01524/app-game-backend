@@ -40,13 +40,13 @@ async function handleBet(socket, io, roomId, amount) {
   
   // check balance
   const user = await getOne('SELECT * FROM users WHERE username = ?', [p.username]);
-  if (!user || user.gold < amount) {
-    socket.emit('xidach_error', 'Không đủ Vàng!');
+  if (!user || user.xu < amount) {
+    socket.emit('xidach_error', 'Không đủ Xu!');
     return;
   }
 
   // Deduct bet
-  await runSql('UPDATE users SET gold = gold - ? WHERE username = ?', [amount, p.username]);
+  await runSql('UPDATE users SET xu = xu - ? WHERE username = ?', [amount, p.username]);
   p.bet = amount;
   p.status = 'ready';
 
@@ -198,7 +198,7 @@ async function finishGame(io, roomId) {
       
       p.payout = payout;
       if (payout > 0) {
-        await runSql('UPDATE users SET gold = gold + ? WHERE username = ?', [payout, p.username]);
+        await runSql('UPDATE users SET xu = xu + ? WHERE username = ?', [payout, p.username]);
       }
     }
   }

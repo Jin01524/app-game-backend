@@ -7,8 +7,8 @@ const router = express.Router();
 // All routes here already protected by authenticateToken + requireAdmin (set in server.js)
 
 // ── GET /api/admin/users ─────────────────────────────────────────────────────
-router.get('/users', (req, res) => {
-  const users = getAll(
+router.get('/users', async (req, res) => {
+  const users = await getAll(
     'SELECT id, username, display_name, role, xu, created_at FROM users ORDER BY id ASC'
   );
   res.json(users.map(u => ({
@@ -22,7 +22,7 @@ router.get('/users', (req, res) => {
 });
 
 // ── POST /api/admin/users — Tạo user mới ─────────────────────────────────────
-router.post('/users', (req, res) => {
+router.post('/users', async (req, res) => {
   const { username, displayName, password, role } = req.body;
 
   if (!username || !password)
@@ -32,19 +32,19 @@ router.post('/users', (req, res) => {
   if (!/^[a-zA-Z0-9_]+$/.test(username))
     return res.status(400).json({ error: 'Tên đăng nhập chỉ được chứa chữ cái, số, dấu gạch dưới' });
 
-  const existing = getOne('SELECT id FROM users WHERE username = ?', [username.toLowerCase()]);
+  const existing = await getOne('SELECT id FROM users WHERE username = ?', [username.toLowerCase()]);
   if (existing)
     return res.status(409).json({ error: 'Tên đăng nhập đã tồn tại' });
 
   const hash = bcrypt.hashSync(password, 10);
   const validRole = ['user', 'admin'].includes(role) ? role : 'user';
 
-  runSql(
+  await runSql(
     'INSERT INTO users (username, password_hash, display_name, role) VALUES (?, ?, ?, ?)',
     [username.toLowerCase(), hash, displayName || username, validRole]
   );
 
-  const created = getOne('SELECT id, username, display_name, role, created_at FROM users WHERE username = ?',
+  const created = await getOne('SELECT id, username, display_name, role, created_at FROM users WHERE username = ?',
     [username.toLowerCase()]);
   res.status(201).json({
     message: 'Tạo tài khoản thành công',
@@ -53,16 +53,16 @@ router.post('/users', (req, res) => {
 });
 
 // ── PUT /api/admin/users/:id — Sửa user ──────────────────────────────────────
-router.put('/users/:id', (req, res) => {
+router.put('/users/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   const { displayName, password, role, xu } = req.body;
 
-  const user = getOne('SELECT * FROM users WHERE id = ?', [id]);
+  const user = await getOne('SELECT * FROM users WHERE id = ?', [id]);
   if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại' });
 
   // Prevent removing the only admin
   if (role === 'user' && user.role === 'admin') {
-    const adminCount = getAll("SELECT id FROM users WHERE role = 'admin'").length;
+    const adminCount = (await getAll("SELECT id FROM users WHERE role = 'admin'")).length;
     if (adminCount <= 1)
       return res.status(400).json({ error: 'Không thể hạ quyền admin duy nhất' });
   }
@@ -75,14 +75,14 @@ router.put('/users/:id', (req, res) => {
     if (password.length < 4)
       return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 4 ký tự' });
     const hash = bcrypt.hashSync(password, 10);
-    runSql('UPDATE users SET display_name = ?, role = ?, password_hash = ?, xu = ? WHERE id = ?',
+    await runSql('UPDATE users SET display_name = ?, role = ?, password_hash = ?, xu = ? WHERE id = ?',
       [newDisplayName, validRole, hash, newXu, id]);
   } else {
-    runSql('UPDATE users SET display_name = ?, role = ?, xu = ? WHERE id = ?',
+    await runSql('UPDATE users SET display_name = ?, role = ?, xu = ? WHERE id = ?',
       [newDisplayName, validRole, newXu, id]);
   }
 
-  const updated = getOne('SELECT id, username, display_name, role, xu, created_at FROM users WHERE id = ?', [id]);
+  const updated = await getOne('SELECT id, username, display_name, role, xu, created_at FROM users WHERE id = ?', [id]);
   res.json({
     message: 'Cập nhật thành công',
     user: { id: updated.id, username: updated.username, displayName: updated.display_name, role: updated.role, xu: updated.xu ?? 0 },
@@ -90,34 +90,34 @@ router.put('/users/:id', (req, res) => {
 });
 
 // ── DELETE /api/admin/users/:id — Xoá user ───────────────────────────────────
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', async (req, res) => {
   const id = parseInt(req.params.id);
 
   // Cannot delete self
   if (id === req.user.id)
     return res.status(400).json({ error: 'Không thể xóa tài khoản đang đăng nhập' });
 
-  const user = getOne('SELECT * FROM users WHERE id = ?', [id]);
+  const user = await getOne('SELECT * FROM users WHERE id = ?', [id]);
   if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại' });
 
   // Cannot delete last admin
   if (user.role === 'admin') {
-    const adminCount = getAll("SELECT id FROM users WHERE role = 'admin'").length;
+    const adminCount = (await getAll("SELECT id FROM users WHERE role = 'admin'")).length;
     if (adminCount <= 1)
       return res.status(400).json({ error: 'Không thể xóa admin duy nhất' });
   }
 
-  runSql('DELETE FROM users WHERE id = ?', [id]);
+  await runSql('DELETE FROM users WHERE id = ?', [id]);
   res.json({ message: `Đã xóa tài khoản ${user.username}` });
 });
 
 // ── PUT /api/admin/settings ──────────────────────────────────────────────────
-router.put('/settings', (req, res) => {
+router.put('/settings', async (req, res) => {
   const { gkBaseSpeed, goalWidth, aimSpeed } = req.body;
   
-  if (gkBaseSpeed !== undefined) runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['gkBaseSpeed', String(gkBaseSpeed)]);
-  if (goalWidth !== undefined) runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['goalWidth', String(goalWidth)]);
-  if (aimSpeed !== undefined) runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['aimSpeed', String(aimSpeed)]);
+  if (gkBaseSpeed !== undefined) await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', ['gkBaseSpeed', String(gkBaseSpeed)]);
+  if (goalWidth !== undefined) await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', ['goalWidth', String(goalWidth)]);
+  if (aimSpeed !== undefined) await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', ['aimSpeed', String(aimSpeed)]);
 
   res.json({ message: 'Đã cập nhật cấu hình game' });
 });

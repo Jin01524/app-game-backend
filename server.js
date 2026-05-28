@@ -113,7 +113,7 @@ initDb().then(() => {
       }
     });
 
-    socket.on('pickup_item', (dropId) => {
+    socket.on('pickup_item', async dropId => {
       if (socket.hostUsername && houseRooms[socket.hostUsername]) {
         const room = houseRooms[socket.hostUsername];
         if (room.drops) {
@@ -121,12 +121,12 @@ initDb().then(() => {
           if (dropIndex !== -1) {
             const drop = room.drops[dropIndex];
             const { getOne, runSql } = require('./db');
-            const user = getOne('SELECT id, backpack FROM users WHERE username = ?', [socket.playerUsername]);
+            const user = await getOne('SELECT id, backpack FROM users WHERE username = ?', [socket.playerUsername]);
             if (user) {
                let backpack = parseJSON(user.backpack, [null, null]);
                const result = addToBackpack(backpack, drop.item_id, 1);
                if (result.success) {
-                 runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(result.backpack), user.id]);
+                 await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(result.backpack), user.id]);
                  room.drops.splice(dropIndex, 1);
                  io.to(socket.hostUsername).emit('item_dropped', room.drops);
                  socket.emit('pickup_success', { backpack: result.backpack });
@@ -151,16 +151,16 @@ initDb().then(() => {
   });
 
   // Periodically check for milk drops (every 10s)
-  setInterval(() => {
+  setInterval(async () => {
     const { getOne, runSql } = require('./db');
     const { simulateCowProgress } = require('./cowSimulation');
     const now = Date.now();
     for (const hostUsername in houseRooms) {
       if (!houseRooms[hostUsername].drops) houseRooms[hostUsername].drops = [];
-      const user = getOne('SELECT id FROM users WHERE username = ?', [hostUsername]);
+      const user = await getOne('SELECT id FROM users WHERE username = ?', [hostUsername]);
       if (!user) continue;
       
-      const farm = getOne('SELECT animals_data, cage_inventory, cage_products FROM user_farms WHERE user_id = ?', [user.id]);
+      const farm = await getOne('SELECT animals_data, cage_inventory, cage_products FROM user_farms WHERE user_id = ?', [user.id]);
       if (!farm) continue;
       
       let animalsData = parseJSON(farm.animals_data, []);
@@ -177,7 +177,7 @@ initDb().then(() => {
           });
         }
         
-        runSql('UPDATE user_farms SET animals_data = ?, cage_inventory = ?, cage_products = ? WHERE user_id = ?', [
+        await runSql('UPDATE user_farms SET animals_data = ?, cage_inventory = ?, cage_products = ? WHERE user_id = ?', [
           JSON.stringify(simulation.animalsData),
           JSON.stringify(simulation.cageInventory),
           JSON.stringify(cageProducts),

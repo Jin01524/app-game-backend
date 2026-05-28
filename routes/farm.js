@@ -35,13 +35,13 @@ function getYield(level) {
 }
 
 // ── GET /api/farm/visit/:username ──────────────────────────────────────────────
-router.get('/visit/:username', requireAuth, (req, res) => {
+router.get('/visit/:username', requireAuth, async (req, res) => {
   const targetUsername = req.params.username;
-  const targetUser = getOne('SELECT id, display_name, username FROM users WHERE username = ?', [targetUsername]);
+  const targetUser = await getOne('SELECT id, display_name, username FROM users WHERE username = ?', [targetUsername]);
   
   if (!targetUser) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
   
-  let farm = getOne('SELECT * FROM user_farms WHERE user_id = ?', [targetUser.id]);
+  let farm = await getOne('SELECT * FROM user_farms WHERE user_id = ?', [targetUser.id]);
   if (!farm) {
     farm = { level: 0, state: 'idle', animals: '[]' };
   }
@@ -69,14 +69,14 @@ router.get('/visit/:username', requireAuth, (req, res) => {
 });
 
 // ── GET /api/farm ────────────────────────────────────────────────────────────
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   const userId = req.user.id;
   
   // Create farm record if not exists
-  let farm = getOne('SELECT * FROM user_farms WHERE user_id = ?', [userId]);
+  let farm = await getOne('SELECT * FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm) {
-    runSql("INSERT INTO user_farms (user_id, level, state) VALUES (?, 0, 'idle')", [userId]);
-    farm = getOne('SELECT * FROM user_farms WHERE user_id = ?', [userId]);
+    await runSql("INSERT INTO user_farms (user_id, level, state) VALUES (?, 0, 'idle')", [userId]);
+    farm = await getOne('SELECT * FROM user_farms WHERE user_id = ?', [userId]);
   }
   
   // Calculate if ready
@@ -84,14 +84,14 @@ router.get('/', requireAuth, (req, res) => {
     const diff = (new Date() - new Date(farm.planted_at + 'Z')) / 1000;
     const growthTime = settingsManager.getSetting('farm_crop_growth_time', 30);
     if (diff >= growthTime) {
-      runSql("UPDATE user_farms SET state = 'ready' WHERE user_id = ?", [userId]);
+      await runSql("UPDATE user_farms SET state = 'ready' WHERE user_id = ?", [userId]);
       farm.state = 'ready';
     }
   }
 
-  const inventory = getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+  const inventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
   
-  const user = getOne('SELECT xu, inventory_slots FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu, inventory_slots FROM users WHERE id = ?', [userId]);
 
   res.json({
     farm: {
@@ -113,25 +113,25 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // ── POST /api/farm/buy ───────────────────────────────────────────────────────
-router.post('/buy', requireAuth, (req, res) => {
+router.post('/buy', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const farm = await getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
   
   if (farm && farm.level > 0) return res.status(400).json({ error: 'Đã sở hữu ruộng' });
   if (user.xu < 100) return res.status(400).json({ error: 'Không đủ xu (Cần 100 xu)' });
   
-  runSql('UPDATE users SET xu = xu - 100 WHERE id = ?', [userId]);
-  runSql("UPDATE user_farms SET level = 1, state = 'idle' WHERE user_id = ?", [userId]);
+  await runSql('UPDATE users SET xu = xu - 100 WHERE id = ?', [userId]);
+  await runSql("UPDATE user_farms SET level = 1, state = 'idle' WHERE user_id = ?", [userId]);
   
   res.json({ message: 'Đã mua mảnh ruộng' });
 });
 
 // ── POST /api/farm/upgrade ───────────────────────────────────────────────────
-router.post('/upgrade', requireAuth, (req, res) => {
+router.post('/upgrade', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const farm = await getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
   
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Chưa sở hữu ruộng' });
   if (farm.level >= 50) return res.status(400).json({ error: 'Ruộng đã đạt cấp tối đa' });
@@ -139,32 +139,32 @@ router.post('/upgrade', requireAuth, (req, res) => {
   const cost = getUpgradeCost(farm.level);
   if (user.xu < cost) return res.status(400).json({ error: `Không đủ xu (Cần ${cost} xu)` });
   
-  runSql('UPDATE users SET xu = xu - ? WHERE id = ?', [cost, userId]);
-  runSql('UPDATE user_farms SET level = level + 1 WHERE user_id = ?', [userId]);
+  await runSql('UPDATE users SET xu = xu - ? WHERE id = ?', [cost, userId]);
+  await runSql('UPDATE user_farms SET level = level + 1 WHERE user_id = ?', [userId]);
   
   res.json({ message: 'Nâng cấp thành công' });
 });
 
 // ── POST /api/farm/plant ─────────────────────────────────────────────────────
-router.post('/plant', requireAuth, (req, res) => {
+router.post('/plant', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = getOne('SELECT level, state FROM user_farms WHERE user_id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const farm = await getOne('SELECT level, state FROM user_farms WHERE user_id = ?', [userId]);
   
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Chưa sở hữu ruộng' });
   if (farm.state !== 'idle') return res.status(400).json({ error: 'Ruộng đang không trống' });
   if (user.xu < 10) return res.status(400).json({ error: 'Không đủ xu gieo hạt (Cần 10 xu)' });
   
-  runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
-  runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
+  await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
+  await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
   
   res.json({ message: 'Đã gieo hạt' });
 });
 
 // ── POST /api/farm/harvest ───────────────────────────────────────────────────
-router.post('/harvest', requireAuth, (req, res) => {
+router.post('/harvest', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const farm = getOne('SELECT level, state, planted_at FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = await getOne('SELECT level, state, planted_at FROM user_farms WHERE user_id = ?', [userId]);
   
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Chưa sở hữu ruộng' });
   
@@ -178,7 +178,7 @@ router.post('/harvest', requireAuth, (req, res) => {
   if (!isReady) return res.status(400).json({ error: 'Lúa chưa chín' });
   
   const amount = getYield(farm.level);
-  const user = getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
   
   let backpack = parseJSON(user.backpack, [null, null]);
   const addResult = addToBackpack(backpack, 'lua', amount, 2);
@@ -187,39 +187,39 @@ router.post('/harvest', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Balo đã đầy!' });
   }
   
-  runSql("UPDATE users SET backpack = ? WHERE id = ?", [JSON.stringify(addResult.backpack), userId]);
+  await runSql("UPDATE users SET backpack = ? WHERE id = ?", [JSON.stringify(addResult.backpack), userId]);
   
   // Reset farm state
-  runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
+  await runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
   
   res.json({ message: `Thu hoạch thành công ${amount} lúa!` });
 });
 
 // ── POST /api/farm/buy-slot ──────────────────────────────────────────────────
-router.post('/buy-slot', requireAuth, (req, res) => {
+router.post('/buy-slot', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
   
   if (user.xu < 250) return res.status(400).json({ error: 'Không đủ xu (Cần 250 xu)' });
   
-  runSql('UPDATE users SET xu = xu - 250, inventory_slots = COALESCE(inventory_slots, 5) + 1 WHERE id = ?', [userId]);
+  await runSql('UPDATE users SET xu = xu - 250, inventory_slots = COALESCE(inventory_slots, 5) + 1 WHERE id = ?', [userId]);
   
   res.json({ message: 'Đã mua 1 ô túi đồ mới!' });
 });
 
 // ── POST /api/farm/place-animal ──────────────────────────────────────────────────
-router.post('/place-animal', requireAuth, (req, res) => {
+router.post('/place-animal', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { animal } = req.body;
   if (!animal) return res.status(400).json({ error: 'Vui lòng chọn vật nuôi' });
   
-  const user = getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
   let backpack = parseJSON(user.backpack, [null, null]);
   let hasInBackpack = getBackpackItemCount(backpack, animal) > 0;
   
   let hasInInventory = false;
   if (!hasInBackpack) {
-    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
+    const invItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
     if (invItem && invItem.quantity > 0) hasInInventory = true;
   }
   
@@ -227,7 +227,7 @@ router.post('/place-animal', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Không có vật nuôi này trong balo hoặc kho' });
   }
   
-  const farm = getOne('SELECT level, animals, animals_data FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = await getOne('SELECT level, animals, animals_data FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Bạn cần mua ruộng trước khi thả vật nuôi' });
   
   let currentAnimals = parseJSON(farm.animals, []);
@@ -242,24 +242,24 @@ router.post('/place-animal', requireAuth, (req, res) => {
   
   if (hasInBackpack) {
     backpack = removeFromBackpack(backpack, animal, 1).backpack;
-    runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+    await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
   } else {
-    runSql('UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_id = ?', [userId, animal]);
+    await runSql('UPDATE user_inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_id = ?', [userId, animal]);
     // Clean up if 0
-    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
+    const invItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
     if (invItem && invItem.quantity <= 0) {
-      runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
+      await runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, animal]);
     }
   }
   
   // Add to farm
-  runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
+  await runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
   
   res.json({ message: 'Thả thú nuôi vào chuồng thành công!', backpack });
 });
 
 // ── POST /api/farm/sell-animals ────────────────────────────────────────────────
-router.post('/sell-animals', requireAuth, (req, res) => {
+router.post('/sell-animals', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { indices } = req.body; // array of indices to sell
   
@@ -267,7 +267,7 @@ router.post('/sell-animals', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Chưa chọn con vật nào để bán' });
   }
 
-  const farm = getOne('SELECT animals, animals_data FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = await getOne('SELECT animals, animals_data FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm) return res.status(400).json({ error: 'Không tìm thấy trang trại' });
 
   let currentAnimals = parseJSON(farm.animals, []);
@@ -292,30 +292,30 @@ router.post('/sell-animals', requireAuth, (req, res) => {
   const totalEarned = sellCount * 150; // 75% of 200 xu
   
   // Update DB
-  runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
-  runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
+  await runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
+  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
   
-  const user = getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
 
   res.json({ message: `Bán thành công ${sellCount} con bò, thu về ${totalEarned} xu`, xu: user.xu });
 });
 
 // ── POST /api/farm/feed ────────────────────────────────────────────────────────
-router.post('/feed', requireAuth, (req, res) => {
+router.post('/feed', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { amount } = req.body;
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Số lượng không hợp lệ' });
 
-  const user = getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
   let backpack = parseJSON(user.backpack, [null, null]);
   const romCount = getBackpackItemCount(backpack, 'rom');
-  const invRow = getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'rom'", [userId]);
+  const invRow = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'rom'", [userId]);
   const romInvCount = invRow ? invRow.quantity : 0;
   
   const takeAmount = Math.min(amount, romCount + romInvCount);
   if (takeAmount <= 0) return res.status(400).json({ error: 'Không có rơm trong balo hoặc kho' });
 
-  const farm = getOne('SELECT animals_data, cage_inventory, cage_products FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = await getOne('SELECT animals_data, cage_inventory, cage_products FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm) return res.status(400).json({ error: 'Chưa có chuồng' });
   
   let animalsData = parseJSON(farm.animals_data, []);
@@ -329,7 +329,7 @@ router.post('/feed', requireAuth, (req, res) => {
   let cageInv = simulation.cageInventory;
   if (simulation.drops && simulation.drops.length > 0) {
     simulation.drops.forEach(d => cageProducts.push(d));
-    runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(cageProducts), userId]);
+    await runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(cageProducts), userId]);
   }
   
   let remainingToAdd = takeAmount;
@@ -364,26 +364,26 @@ router.post('/feed', requireAuth, (req, res) => {
   if (romCount > 0) {
     const fromBp = Math.min(romCount, toDeduct);
     backpack = removeFromBackpack(backpack, 'rom', fromBp).backpack;
-    runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+    await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
     toDeduct -= fromBp;
   }
   if (toDeduct > 0) {
-    runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [toDeduct, userId, 'rom']);
-    const invItem = getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'rom']);
+    await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [toDeduct, userId, 'rom']);
+    const invItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'rom']);
     if (invItem && invItem.quantity <= 0) {
-      runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'rom']);
+      await runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'rom']);
     }
   }
   
-  runSql('UPDATE user_farms SET cage_inventory = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(cageInv), JSON.stringify(animalsData), userId]);
+  await runSql('UPDATE user_farms SET cage_inventory = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(cageInv), JSON.stringify(animalsData), userId]);
   
   res.json({ message: `Đã bỏ ${actualAdded} rơm vào chuồng`, backpack, cage_inventory: cageInv });
 });
 
 // ── POST /api/farm/collect-cage-products ──────────────────────────────────────
-router.post('/collect-cage-products', requireAuth, (req, res) => {
+router.post('/collect-cage-products', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const farm = getOne('SELECT cage_products FROM user_farms WHERE user_id = ?', [userId]);
+  const farm = await getOne('SELECT cage_products FROM user_farms WHERE user_id = ?', [userId]);
   if (!farm) return res.status(400).json({ error: 'Không tìm thấy nông trại' });
 
   let products = parseJSON(farm.cage_products, []);
@@ -391,7 +391,7 @@ router.post('/collect-cage-products', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Không có sản phẩm nào để thu hoạch' });
   }
 
-  const user = getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
+  const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
   let backpack = parseJSON(user.backpack, [null, null]);
 
   // Count occurrences
@@ -415,14 +415,14 @@ router.post('/collect-cage-products', requireAuth, (req, res) => {
   }
 
   // Update backpack
-  runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+  await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
 
   if (full && remainingProducts.length === products.length) {
      return res.status(400).json({ error: 'Balo đã đầy, không thể thu hoạch thêm!' });
   }
 
   // Update remaining products in cage
-  runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(remainingProducts), userId]);
+  await runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(remainingProducts), userId]);
 
   if (full) {
     res.json({ message: `Balo đã đầy! Chỉ thu hoạch được một phần.`, counts });

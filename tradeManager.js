@@ -25,7 +25,7 @@ function setupTradeSockets(io) {
       targetSocket.emit('trade_requested', { from: p1 });
     });
 
-    socket.on('trade_accept', ({ fromUsername }) => {
+    socket.on('trade_accept', async ({ fromUsername }) => {
       const p2 = socket.playerUsername;
       const p1 = fromUsername;
       
@@ -37,8 +37,8 @@ function setupTradeSockets(io) {
       if (!p1Socket) return socket.emit('trade_error', 'Người chơi kia đã thoát');
       if (userToTrade[p1] || userToTrade[p2]) return;
 
-      const user1 = getOne('SELECT backpack FROM users WHERE username = ?', [p1]);
-      const user2 = getOne('SELECT backpack FROM users WHERE username = ?', [p2]);
+      const user1 = await getOne('SELECT backpack FROM users WHERE username = ?', [p1]);
+      const user2 = await getOne('SELECT backpack FROM users WHERE username = ?', [p2]);
 
       const bp1 = parseJSON(user1?.backpack, [null, null]);
       const bp2 = parseJSON(user2?.backpack, [null, null]);
@@ -170,8 +170,8 @@ function setupTradeSockets(io) {
 async function executeTrade(trade, io) {
   const { p1, p2 } = trade;
 
-  const u1 = getOne('SELECT id, backpack, xu FROM users WHERE username = ?', [p1.username]);
-  const u2 = getOne('SELECT id, backpack, xu FROM users WHERE username = ?', [p2.username]);
+  const u1 = await getOne('SELECT id, backpack, xu FROM users WHERE username = ?', [p1.username]);
+  const u2 = await getOne('SELECT id, backpack, xu FROM users WHERE username = ?', [p2.username]);
 
   if (!u1 || !u2) return cancelWith(trade, io, 'Không tìm thấy người chơi');
 
@@ -214,8 +214,8 @@ async function executeTrade(trade, io) {
   const newXu1 = u1.xu - p1.xu + p2.xu;
   const newXu2 = u2.xu - p2.xu + p1.xu;
 
-  runSql('UPDATE users SET backpack = ?, xu = ? WHERE id = ?', [JSON.stringify(bp1), newXu1, u1.id]);
-  runSql('UPDATE users SET backpack = ?, xu = ? WHERE id = ?', [JSON.stringify(bp2), newXu2, u2.id]);
+  await runSql('UPDATE users SET backpack = ?, xu = ? WHERE id = ?', [JSON.stringify(bp1), newXu1, u1.id]);
+  await runSql('UPDATE users SET backpack = ?, xu = ? WHERE id = ?', [JSON.stringify(bp2), newXu2, u2.id]);
 
   io.to(p1.socketId).emit('trade_success');
   io.to(p2.socketId).emit('trade_success');

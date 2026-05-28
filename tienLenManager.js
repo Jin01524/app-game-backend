@@ -66,12 +66,12 @@ function sendPersonalStates(io, hostUsername) {
   });
 }
 
-function updateXu(username, amount) {
+async function updateXu(username, amount) {
   if (amount === 0) return;
-  const user = getOne('SELECT id, xu FROM users WHERE username = ?', [username]);
+  const user = await getOne('SELECT id, xu FROM users WHERE username = ?', [username]);
   if (user) {
     const newXu = Math.max(0, user.xu + amount);
-    runSql('UPDATE users SET xu = ? WHERE id = ?', [newXu, user.id]);
+    await runSql('UPDATE users SET xu = ? WHERE id = ?', [newXu, user.id]);
   }
 }
 
@@ -414,14 +414,14 @@ function setupTienLenSockets(io) {
       }
     });
 
-    socket.on('tl_ready', ({ hostUsername }) => {
+    socket.on('tl_ready', async ({ hostUsername }) => {
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return;
       
       // Check user balance
       const p = room.players.find(p => p && p.socketId === socket.id);
       if (p) {
-        const user = getOne('SELECT xu FROM users WHERE username = ?', [p.username]);
+        const user = await getOne('SELECT xu FROM users WHERE username = ?', [p.username]);
         if (user && user.xu >= p.bet) {
           p.ready = true;
         } else {

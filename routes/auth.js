@@ -13,23 +13,23 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Chưa đăng nhập' });
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) return res.status(403).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
     req.user = user;
     try {
-      runSql('UPDATE users SET last_online = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+      await runSql('UPDATE users SET last_online = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
     } catch (e) {}
     next();
   });
 }
 
 // ── POST /api/login ──────────────────────────────────────────────────────────
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password)
     return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập và mật khẩu' });
 
-  const user = getOne('SELECT * FROM users WHERE username = ?', [username.trim().toLowerCase()]);
+  const user = await getOne('SELECT * FROM users WHERE username = ?', [username.trim().toLowerCase()]);
   if (!user)
     return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng' });
 
@@ -68,8 +68,8 @@ router.post('/logout', authenticateToken, (req, res) => {
 });
 
 // ── GET /api/me ──────────────────────────────────────────────────────────────
-router.get('/me', authenticateToken, (req, res) => {
-  const user = getOne(
+router.get('/me', authenticateToken, async (req, res) => {
+  const user = await getOne(
     'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots FROM users WHERE id = ?',
     [req.user.id]
   );
