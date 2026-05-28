@@ -138,11 +138,51 @@ function getSubsetsOfLength(array, k) {
   return result;
 }
 
+function botOpeningPlay(sorted) {
+  if (sorted.length <= 1) return sorted;
+
+  const has2 = (cards) => cards.some(c => c.slice(0, -1) === '2');
+
+  // Group cards by rank
+  const rankGroups = {};
+  for (const card of sorted) {
+    const r = card.slice(0, -1);
+    if (!rankGroups[r]) rankGroups[r] = [];
+    rankGroups[r].push(card);
+  }
+
+  // 1. Try shortest straight using non-2 cards
+  const nonPigCards = sorted.filter(c => c.slice(0, -1) !== '2');
+  if (nonPigCards.length >= 3) {
+    for (let len = 3; len <= Math.min(nonPigCards.length, 6); len++) {
+      const subsets = getSubsetsOfLength(nonPigCards, len);
+      for (const sub of subsets) {
+        const combo = evaluateCombo(sub);
+        if (combo && combo.type === 'straight') {
+          return sub;
+        }
+      }
+      if (len === 3) break; // prefer shortest straight, stop after checking 3-card straights
+    }
+  }
+
+  // 2. Try lowest pair (avoid 2s)
+  for (const r of ranks) {
+    if (r === '2') continue;
+    if (rankGroups[r] && rankGroups[r].length >= 2) {
+      return rankGroups[r].slice(0, 2);
+    }
+  }
+
+  // 3. Play lowest single (avoid 2s if possible)
+  return [nonPigCards.length > 0 ? nonPigCards[0] : sorted[0]];
+}
+
 function botPlay(hand, lastCombo) {
   const sorted = sortCards(hand);
   
   if (!lastCombo) {
-    return [sorted[0]];
+    return botOpeningPlay(sorted);
   }
 
   let candidates = [];
@@ -161,41 +201,29 @@ function botPlay(hand, lastCombo) {
   const lastIsPigPair = lastCombo.type === 'pair' && lastCombo.value >= 48;
   
   if (lastIsPig || lastIsPigPair || lastCombo.type === 'thong') {
-    if (sorted.length >= 4) {
-      const subsets = getSubsetsOfLength(sorted, 4);
-      for (const sub of subsets) {
-        const combo = evaluateCombo(sub);
-        if (combo && canBeat(combo, lastCombo)) {
-          candidates.push({ cards: sub, value: combo.value });
-        }
-      }
-    }
-    if (sorted.length >= 6) {
-      const subsets = getSubsetsOfLength(sorted, 6);
-      for (const sub of subsets) {
-        const combo = evaluateCombo(sub);
-        if (combo && canBeat(combo, lastCombo)) {
-          candidates.push({ cards: sub, value: combo.value });
-        }
-      }
-    }
-    if (sorted.length >= 8) {
-      const subsets = getSubsetsOfLength(sorted, 8);
-      for (const sub of subsets) {
-        const combo = evaluateCombo(sub);
-        if (combo && canBeat(combo, lastCombo)) {
-          candidates.push({ cards: sub, value: combo.value });
+    for (const len of [4, 6, 8]) {
+      if (sorted.length >= len) {
+        const subsets = getSubsetsOfLength(sorted, len);
+        for (const sub of subsets) {
+          const combo = evaluateCombo(sub);
+          if (combo && canBeat(combo, lastCombo)) {
+            candidates.push({ cards: sub, value: combo.value });
+          }
         }
       }
     }
   }
 
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => a.value - b.value);
-    return candidates[0].cards;
-  }
+  if (candidates.length === 0) return [];
+
+  // Sort: prefer combos without 2s (penalize by +100 to push them to the end)
+  candidates.sort((a, b) => {
+    const aHas2 = a.cards.some(c => c.slice(0, -1) === '2') ? 100 : 0;
+    const bHas2 = b.cards.some(c => c.slice(0, -1) === '2') ? 100 : 0;
+    return (a.value + aHas2) - (b.value + bHas2);
+  });
   
-  return [];
+  return candidates[0].cards;
 }
 
 module.exports = {
