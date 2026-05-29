@@ -1,5 +1,5 @@
 const express = require('express');
-const { getAll, getOne } = require('../db');
+const { getAll, getOne, runSql } = require('../db');
 
 const router = express.Router();
 
@@ -59,6 +59,51 @@ router.get('/private/:otherUsername', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Error fetching private messages:', err);
     res.status(500).json({ error: 'Không thể tải tin nhắn riêng' });
+  }
+});
+
+/**
+ * POST /api/messages/read
+ * Marks all messages from a specific sender as read
+ */
+router.post('/read', requireAuth, async (req, res) => {
+  const { senderUsername } = req.body;
+  const myUserId = req.user.id;
+
+  try {
+    const sender = await getOne('SELECT id FROM users WHERE username = ?', [senderUsername]);
+    if (!sender) {
+      return res.status(404).json({ error: 'Không tìm thấy người dùng này' });
+    }
+
+    await runSql(
+      'UPDATE messages SET is_read = TRUE WHERE sender_id = ? AND recipient_id = ? AND is_read = FALSE',
+      [sender.id, myUserId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error marking messages as read:', err);
+    res.status(500).json({ error: 'Không thể đánh dấu đã đọc' });
+  }
+});
+
+/**
+ * GET /api/messages/unread-count
+ * Gets the total count of unread private messages for the logged-in user
+ */
+router.get('/unread-count', requireAuth, async (req, res) => {
+  const myUserId = req.user.id;
+
+  try {
+    const row = await getOne(
+      'SELECT COUNT(*) as count FROM messages WHERE recipient_id = ? AND is_read = FALSE',
+      [myUserId]
+    );
+    res.json({ count: parseInt(row?.count || 0, 10) });
+  } catch (err) {
+    console.error('Error counting unread messages:', err);
+    res.status(500).json({ error: 'Không thể tính số tin nhắn chưa đọc' });
   }
 });
 

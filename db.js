@@ -118,11 +118,15 @@ async function initDb() {
       sender_id INTEGER NOT NULL,
       recipient_id INTEGER,
       content TEXT NOT NULL,
+      is_read BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // Ensure is_read column exists in existing database
+  await runSql(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE`);
 
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
