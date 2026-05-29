@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { getOne, getAll, runSql } = require('../db');
 const { parseJSON, addToBackpack, removeFromBackpack } = require('../utils');
+const questManager = require('../questManager');
 
 const router = express.Router();
 
@@ -100,6 +101,9 @@ router.post('/game/score', requireAuth, async (req, res) => {
   const xuEarned = goals * 2;
   await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [xuEarned, req.user.id]);
   
+  // Update quest progress for sút bóng
+  await questManager.updateQuestProgress(req.user.id, 'sut_bong', xuEarned);
+
   const user = await getOne('SELECT xu FROM users WHERE id = ?', [req.user.id]);
   res.json({ message: 'OK', xu: user.xu, earned: xuEarned });
 });

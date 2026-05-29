@@ -99,6 +99,19 @@ async function initDb() {
     )
   `);
 
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS user_quests (
+      user_id INTEGER NOT NULL,
+      quest_key TEXT NOT NULL,
+      progress INTEGER DEFAULT 0,
+      completed BOOLEAN DEFAULT FALSE,
+      claimed BOOLEAN DEFAULT FALSE,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, quest_key),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
   await runSql(`INSERT INTO settings (key, value) VALUES ('goalWidth', '80') ON CONFLICT (key) DO NOTHING`);

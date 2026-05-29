@@ -1,5 +1,6 @@
 const { createDeck, shuffle, sortCards, evaluateCombo, canBeat, botPlay } = require('./utils/tienLenLogic');
 const { getOne, runSql } = require('./db');
+const questManager = require('./questManager');
 
 const rooms = {};
 
@@ -253,6 +254,20 @@ function endRound(io, hostUsername) {
     if (!w2.isBot) updateXu(w2.username, w2.bet + w3.bet);
     if (!w3.isBot) {} 
   }
+
+  // Update quest progress for playing a lobby game
+  room.players.forEach(async (p) => {
+    if (p && !p.isBot) {
+      try {
+        const user = await getOne('SELECT id FROM users WHERE username = ?', [p.username]);
+        if (user) {
+          await questManager.updateQuestProgress(user.id, 'choi_lobby_game', 1);
+        }
+      } catch (err) {
+        console.error("Error updating Tien Len quest progress in endRound:", err);
+      }
+    }
+  });
   
   // Replace bots with waiting spectators
   const waitingSpectators = room.spectators.filter(s => s.wantsToJoin);

@@ -3,6 +3,7 @@ const { getOne, getAll, runSql } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, removeFromBackpack, getBackpackItemCount, addToBackpack } = require('../utils');
 const { simulateCowProgress } = require('../cowSimulation');
+const questManager = require('../questManager');
 
 const router = express.Router();
 
@@ -124,6 +125,9 @@ router.post('/buy', requireAuth, async (req, res) => {
   await runSql('UPDATE users SET xu = xu - 100 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET level = 1, state = 'idle' WHERE user_id = ?", [userId]);
   
+  // Update quest progress for buying land
+  await questManager.updateQuestProgress(userId, 'mua_ruong', 1);
+
   res.json({ message: 'Đã mua mảnh ruộng' });
 });
 
@@ -158,6 +162,12 @@ router.post('/plant', requireAuth, async (req, res) => {
   await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
   
+  // Update quest progress for planting (stage 1 of gieo_thu_hoach)
+  const q = await questManager.getUserQuest(userId, 'gieo_thu_hoach');
+  if (q && q.progress === 0) {
+    await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1);
+  }
+
   res.json({ message: 'Đã gieo hạt' });
 });
 
@@ -192,6 +202,12 @@ router.post('/harvest', requireAuth, async (req, res) => {
   // Reset farm state
   await runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
   
+  // Update quest progress for harvesting (stage 2 of gieo_thu_hoach)
+  const q = await questManager.getUserQuest(userId, 'gieo_thu_hoach');
+  if (q && q.progress === 1) {
+    await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1);
+  }
+
   res.json({ message: `Thu hoạch thành công ${amount} lúa!` });
 });
 
@@ -377,6 +393,9 @@ router.post('/feed', requireAuth, async (req, res) => {
   
   await runSql('UPDATE user_farms SET cage_inventory = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(cageInv), JSON.stringify(animalsData), userId]);
   
+  // Update quest progress for feeding cow
+  await questManager.updateQuestProgress(userId, 'cho_bo_an', actualAdded);
+
   res.json({ message: `Đã bỏ ${actualAdded} rơm vào chuồng`, backpack, cage_inventory: cageInv });
 });
 

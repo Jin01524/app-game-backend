@@ -3,6 +3,7 @@ const router = express.Router();
 const { getOne, runSql } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, addToBackpack } = require('../utils');
+const questManager = require('../questManager');
 
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -73,6 +74,9 @@ router.post('/sell', async (req, res) => {
   // Get new user state
   const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
 
+  // Update quest progress for selling wheat
+  await questManager.updateQuestProgress(userId, 'ban_lua', sellQty);
+
   res.json({ success: true, earned: totalEarned, currentXu: user.xu });
 });
 
@@ -93,6 +97,9 @@ router.post('/buy-animal', async (req, res) => {
 
   // Deduct Xu and save backpack
   await runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cowPrice, JSON.stringify(result.backpack), userId]);
+
+  // Update quest progress for buying cow
+  await questManager.updateQuestProgress(userId, 'mua_bo', 1);
 
   res.json({ message: 'Mua bò thành công!', xu: user.xu - cowPrice, backpack: result.backpack });
 });

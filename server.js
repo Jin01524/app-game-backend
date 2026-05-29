@@ -52,11 +52,13 @@ initDb().then(() => {
   const farmRoutes = require('./routes/farm');
   const adminRoutes  = require('./routes/admin');
   const marketRoutes = require('./routes/market');
+  const questRoutes = require('./routes/quests');
 
   app.use('/api', authRoutes);
   app.use('/api/profile', authenticateToken, profileRoutes);
   app.use('/api/farm', authenticateToken, farmRoutes);
   app.use('/api/market', authenticateToken, marketRoutes);
+  app.use('/api/quests', authenticateToken, questRoutes);
 
   // Admin routes — must be authenticated + admin role
   app.use('/api/admin', authenticateToken, (req, res, next) => {

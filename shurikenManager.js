@@ -1,4 +1,5 @@
 const { getOne, runSql } = require('./db');
+const questManager = require('./questManager');
 
 const rooms = {};
 
@@ -305,6 +306,16 @@ function endGame(io, hostUsername) {
         console.error("Error updating xu in shuriken:", err);
       }
     }
+
+    // Update quest progress for playing a lobby game
+    try {
+      const user = await getOne("SELECT id FROM users WHERE username = ?", [p.username]);
+      if (user) {
+        await questManager.updateQuestProgress(user.id, 'choi_lobby_game', 1);
+      }
+    } catch (err) {
+      console.error("Error updating shuriken quest progress in endGame:", err);
+    }
   });
 
   broadcastState(io, hostUsername);
@@ -316,6 +327,10 @@ function setupShurikenSockets(io) {
     socket.on('shuriken_create_room', (payload) => {
         if (payload && payload.user) socket.user = payload.user;
       if (!socket.user) return;
+      if (socket.user.role !== 'admin') {
+        socket.emit('shuriken_error', 'Chỉ Admin mới có quyền truy cập trò chơi này!');
+        return;
+      }
       const hostUsername = socket.user.username;
       
       const room = getRoom(hostUsername);
@@ -339,6 +354,10 @@ function setupShurikenSockets(io) {
         if (payload && payload.user) socket.user = payload.user;
         const { hostUsername } = payload || {};
       if (!socket.user) return;
+      if (socket.user.role !== 'admin') {
+        socket.emit('shuriken_error', 'Chỉ Admin mới có quyền truy cập trò chơi này!');
+        return;
+      }
       const room = rooms[hostUsername];
       if (!room || room.status !== 'waiting') return; // Can only join if waiting
       
