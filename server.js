@@ -47,8 +47,24 @@ app.get('/health', (req, res) => {
 initDb().then(() => {
   require('./settingsManager').loadSettings();
 
-  // Video Streaming Proxy (Bypasses Google Photos 403 hotlinking block & supports high-performance Range Requests)
+  // Video Streaming Proxy (Bypasses Google Photos 403 hotlinking block & supports Range Requests + Redirect Following)
   const https = require('https');
+  const http = require('http');
+
+  function fetchWithRedirects(url, headers, maxRedirects, callback) {
+    const mod = url.startsWith('https') ? https : http;
+    mod.get(url, { headers }, (proxyRes) => {
+      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location && maxRedirects > 0) {
+        proxyRes.resume(); // drain the response
+        const redirectUrl = proxyRes.headers.location.startsWith('http')
+          ? proxyRes.headers.location
+          : new URL(proxyRes.headers.location, url).href;
+        return fetchWithRedirects(redirectUrl, headers, maxRedirects - 1, callback);
+      }
+      callback(null, proxyRes);
+    }).on('error', (err) => callback(err, null));
+  }
+
   app.get('/api/proxy-video', (req, res) => {
     const videoUrl = req.query.url;
     if (!videoUrl) {
@@ -59,32 +75,40 @@ initDb().then(() => {
       return res.status(403).send('Forbidden: Invalid proxy target');
     }
 
+    console.log('[proxy-video] Streaming:', videoUrl.substring(0, 80) + '...');
+
     const range = req.headers.range;
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    const proxyHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Referer': 'https://photos.google.com/',
     };
     if (range) {
-      headers['Range'] = range;
+      proxyHeaders['Range'] = range;
     }
 
-    https.get(videoUrl, { headers }, (proxyRes) => {
-      res.status(proxyRes.statusCode);
-
-      if (proxyRes.headers['content-type']) res.setHeader('content-type', proxyRes.headers['content-type']);
-      if (proxyRes.headers['content-length']) res.setHeader('content-length', proxyRes.headers['content-length']);
-      if (proxyRes.headers['content-range']) res.setHeader('content-range', proxyRes.headers['content-range']);
-      if (proxyRes.headers['accept-ranges']) res.setHeader('accept-ranges', proxyRes.headers['accept-ranges']);
-
-      req.on('close', () => {
-        proxyRes.destroy();
-      });
-
-      proxyRes.pipe(res);
-    }).on('error', (err) => {
-      console.error('Video proxy error:', err);
-      if (!res.headersSent) {
-        res.status(500).send('Error streaming video');
+    fetchWithRedirects(videoUrl, proxyHeaders, 5, (err, proxyRes) => {
+      if (err) {
+        console.error('[proxy-video] Fetch error:', err.message);
+        if (!res.headersSent) res.status(502).send('Error fetching video');
+        return;
       }
+
+      console.log('[proxy-video] Upstream status:', proxyRes.statusCode, 'Content-Type:', proxyRes.headers['content-type']);
+
+      // Explicit CORS headers (video elements cross-origin need this)
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+
+      res.status(proxyRes.statusCode);
+      if (proxyRes.headers['content-type']) res.setHeader('Content-Type', proxyRes.headers['content-type']);
+      if (proxyRes.headers['content-length']) res.setHeader('Content-Length', proxyRes.headers['content-length']);
+      if (proxyRes.headers['content-range']) res.setHeader('Content-Range', proxyRes.headers['content-range']);
+      res.setHeader('Accept-Ranges', proxyRes.headers['accept-ranges'] || 'bytes');
+
+      req.on('close', () => proxyRes.destroy());
+      proxyRes.pipe(res);
     });
   });
 
