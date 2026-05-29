@@ -46,6 +46,48 @@ app.get('/health', (req, res) => {
 
 initDb().then(() => {
   require('./settingsManager').loadSettings();
+
+  // Video Streaming Proxy (Bypasses Google Photos 403 hotlinking block & supports high-performance Range Requests)
+  const https = require('https');
+  app.get('/api/proxy-video', (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl) {
+      return res.status(400).send('Missing url parameter');
+    }
+
+    if (!videoUrl.startsWith('https://lh3.googleusercontent.com/')) {
+      return res.status(403).send('Forbidden: Invalid proxy target');
+    }
+
+    const range = req.headers.range;
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    };
+    if (range) {
+      headers['Range'] = range;
+    }
+
+    https.get(videoUrl, { headers }, (proxyRes) => {
+      res.status(proxyRes.statusCode);
+
+      if (proxyRes.headers['content-type']) res.setHeader('content-type', proxyRes.headers['content-type']);
+      if (proxyRes.headers['content-length']) res.setHeader('content-length', proxyRes.headers['content-length']);
+      if (proxyRes.headers['content-range']) res.setHeader('content-range', proxyRes.headers['content-range']);
+      if (proxyRes.headers['accept-ranges']) res.setHeader('accept-ranges', proxyRes.headers['accept-ranges']);
+
+      req.on('close', () => {
+        proxyRes.destroy();
+      });
+
+      proxyRes.pipe(res);
+    }).on('error', (err) => {
+      console.error('Video proxy error:', err);
+      if (!res.headersSent) {
+        res.status(500).send('Error streaming video');
+      }
+    });
+  });
+
   const authRoutes = require('./routes/auth');
   const { authenticateToken } = authRoutes;
   const profileRoutes = require('./routes/profile');
