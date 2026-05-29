@@ -128,6 +128,104 @@ initDb().then(() => {
   app.use('/api/market', authenticateToken, marketRoutes);
   app.use('/api/quests', authenticateToken, questRoutes);
 
+  // Gold Price Scraper Endpoint
+  app.get('/api/gold', authenticateToken, (req, res) => {
+    const https = require('https');
+    const options = {
+      hostname: 'giavang.org',
+      port: 443,
+      path: '/',
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://giavang.org/'
+      },
+      timeout: 8000
+    };
+
+    const request = https.get(options, (proxyRes) => {
+      let html = '';
+      proxyRes.on('data', (chunk) => {
+        html += chunk;
+      });
+      
+      proxyRes.on('end', () => {
+        try {
+          const timeRegex = /Cập nhật lúc\s+([\d:]+\s+[\d/]+)/i;
+          const timeMatch = html.match(timeRegex);
+          const updateTime = timeMatch ? timeMatch[1] : new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN');
+          
+          const miengIndex = html.indexOf('Giá vàng Miếng SJC');
+          const nhanIndex = html.indexOf('Giá vàng Nhẫn SJC');
+          
+          let sjcMieng = { buy: '155.500', sell: '158.500' };
+          let sjcNhan = { buy: '155.300', sell: '158.300' };
+          
+          const priceRegex = /<span class="gold-price-label">(Mua vào|Bán ra)<\/span>\s*<span class="gold-price">([\d.,]+)\s*<small/g;
+          
+          if (miengIndex !== -1) {
+            const endSlice = nhanIndex !== -1 ? nhanIndex : miengIndex + 1000;
+            const miengHtml = html.substring(miengIndex, endSlice);
+            let match;
+            const localRegex = new RegExp(priceRegex);
+            while ((match = localRegex.exec(miengHtml)) !== null) {
+              if (match[1] === 'Mua vào') sjcMieng.buy = match[2];
+              if (match[1] === 'Bán ra') sjcMieng.sell = match[2];
+            }
+          }
+          
+          if (nhanIndex !== -1) {
+            const nhanHtml = html.substring(nhanIndex, nhanIndex + 1000);
+            let match;
+            const localRegex = new RegExp(priceRegex);
+            while ((match = localRegex.exec(nhanHtml)) !== null) {
+              if (match[1] === 'Mua vào') sjcNhan.buy = match[2];
+              if (match[1] === 'Bán ra') sjcNhan.sell = match[2];
+            }
+          }
+          
+          res.json({
+            success: true,
+            updateTime,
+            sjcMieng,
+            sjcNhan
+          });
+        } catch (e) {
+          res.json({
+            success: false,
+            error: 'Lỗi phân tích dữ liệu',
+            updateTime: new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN'),
+            sjcMieng: { buy: '155.500', sell: '158.500' },
+            sjcNhan: { buy: '155.300', sell: '158.300' }
+          });
+        }
+      });
+    });
+
+    request.on('error', (err) => {
+      res.json({
+        success: false,
+        error: 'Lỗi kết nối máy chủ',
+        updateTime: new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN'),
+        sjcMieng: { buy: '155.500', sell: '158.500' },
+        sjcNhan: { buy: '155.300', sell: '158.300' }
+      });
+    });
+
+    request.on('timeout', () => {
+      request.destroy();
+      res.json({
+        success: false,
+        error: 'Quá thời gian kết nối',
+        updateTime: new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN'),
+        sjcMieng: { buy: '155.500', sell: '158.500' },
+        sjcNhan: { buy: '155.300', sell: '158.300' }
+      });
+    });
+  });
+
   // Admin routes — must be authenticated + admin role
   app.use('/api/admin', authenticateToken, (req, res, next) => {
     if (req.user.role !== 'admin')
