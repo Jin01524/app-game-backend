@@ -112,8 +112,7 @@ async function updateQuestProgress(userId, questKey, incrementAmount) {
 
   let newProgress = Math.min(current.progress + incrementAmount, config.maxProgress);
   let completed = newProgress >= config.maxProgress;
-  // If the quest has no reward (like selling 8 wheat), automatically claim it when completed
-  let claimed = current.claimed || (completed && config.reward === 0);
+  let claimed = current.claimed;
 
   await runSql(`
     INSERT INTO user_quests (user_id, quest_key, progress, completed, claimed)
