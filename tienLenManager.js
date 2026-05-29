@@ -162,6 +162,58 @@ function handlePlay(io, hostUsername, playerIdx, cards) {
   if (!room || room.status !== 'playing') return;
   
   const player = room.players[playerIdx];
+  
+  // Check if this play is a chop on a pig (heo)
+  const lastCombo = room.lastCombo;
+  if (lastCombo && room.lastPlayerIdx !== playerIdx) {
+    const isPig = lastCombo.type === 'single' && lastCombo.value >= 48;
+    const isPigPair = lastCombo.type === 'pair' && lastCombo.value >= 48;
+    
+    if (isPig || isPigPair) {
+      const newCombo = evaluateCombo(cards);
+      if (newCombo) {
+        let isChop = false;
+        if (isPig) {
+          if (newCombo.type === 'four' || newCombo.type === 'thong') {
+            isChop = true;
+          }
+        } else if (isPigPair) {
+          if (newCombo.type === 'four' || (newCombo.type === 'thong' && newCombo.pairs >= 4)) {
+            isChop = true;
+          }
+        }
+        
+        if (isChop) {
+          let chopXu = 0;
+          const choppedPigs = room.tableCards.filter(c => c.startsWith('2'));
+          choppedPigs.forEach(c => {
+            const suit = c.slice(-1);
+            if (suit === 'H') {
+              chopXu += 20; // 2 cơ cộng 20 xu
+            } else if (suit === 'D') {
+              chopXu += 10; // 2 rô 10 xu
+            } else if (suit === 'S' || suit === 'C') {
+              chopXu += 5; // 2 bích chuồn 5 xu
+            }
+          });
+          
+          if (chopXu > 0) {
+            // Reward the chopping player (if they are human)
+            if (!player.isBot) {
+              updateXu(player.username, chopXu);
+            }
+            
+            // Broadcast standard socket announcement
+            const chopperName = player.displayName;
+            const targetName = room.players[room.lastPlayerIdx] ? room.players[room.lastPlayerIdx].displayName : 'Bot';
+            const msg = `🎉 ${chopperName} đã CHẶT HEO của ${targetName} và được cộng ${chopXu} xu! 🐷`;
+            io.to(`tl_${hostUsername}`).emit('tl_announcement', msg);
+          }
+        }
+      }
+    }
+  }
+
   player.cards = player.cards.filter(c => !cards.includes(c));
   
   room.tableCards = cards;

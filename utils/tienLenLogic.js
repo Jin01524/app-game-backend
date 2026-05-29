@@ -141,6 +141,56 @@ function getSubsetsOfLength(array, k) {
 function botOpeningPlay(sorted) {
   if (sorted.length <= 1) return sorted;
 
+  if (sorted.includes('3S') && sorted.length === 13) {
+    // Must play a combo containing '3S'
+    // Group cards by rank
+    const rankGroups = {};
+    for (const card of sorted) {
+      const r = card.slice(0, -1);
+      if (!rankGroups[r]) rankGroups[r] = [];
+      rankGroups[r].push(card);
+    }
+    
+    // 1. Try straights containing '3S'
+    const nonPigCards = sorted.filter(c => c.slice(0, -1) !== '2');
+    if (nonPigCards.length >= 3) {
+      for (let len = 3; len <= Math.min(nonPigCards.length, 6); len++) {
+        const subsets = getSubsetsOfLength(nonPigCards, len);
+        const subsetsWith3S = subsets.filter(sub => sub.includes('3S'));
+        for (const sub of subsetsWith3S) {
+          const combo = evaluateCombo(sub);
+          if (combo && combo.type === 'straight') {
+            return sub;
+          }
+        }
+      }
+    }
+    
+    // 2. Try pair containing '3S'
+    if (rankGroups['3'] && rankGroups['3'].length >= 2) {
+      const other3s = rankGroups['3'].filter(c => c !== '3S');
+      if (other3s.length > 0) {
+        return sortCards(['3S', other3s[0]]);
+      }
+    }
+    
+    // 3. Try triple containing '3S'
+    if (rankGroups['3'] && rankGroups['3'].length >= 3) {
+      const other3s = rankGroups['3'].filter(c => c !== '3S');
+      if (other3s.length >= 2) {
+        return sortCards(['3S', other3s[0], other3s[1]]);
+      }
+    }
+    
+    // 4. Try four of a kind containing '3S'
+    if (rankGroups['3'] && rankGroups['3'].length === 4) {
+      return rankGroups['3'];
+    }
+    
+    // 5. Play single '3S'
+    return ['3S'];
+  }
+
   const has2 = (cards) => cards.some(c => c.slice(0, -1) === '2');
 
   // Group cards by rank
