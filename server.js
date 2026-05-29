@@ -9,6 +9,8 @@ const { setupTradeSockets } = require('./tradeManager');
 const { setupTienLenSockets } = require('./tienLenManager');
 const { setupXiDachSockets } = require('./xiDachManager');
 const { setupShurikenSockets } = require('./shurikenManager');
+const { setupSpySockets } = require('./spyManager');
+
 
 dotenv.config();
 
@@ -143,6 +145,8 @@ initDb().then(() => {
   setupTienLenSockets(io);
   setupXiDachSockets(io);
   setupShurikenSockets(io);
+  setupSpySockets(io);
+
 
   const houseRooms = {};
 
