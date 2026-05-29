@@ -10,6 +10,7 @@ const { setupTienLenSockets } = require('./tienLenManager');
 const { setupXiDachSockets } = require('./xiDachManager');
 const { setupShurikenSockets } = require('./shurikenManager');
 const { setupSpySockets } = require('./spyManager');
+const { setupMessageSockets } = require('./messageManager');
 
 
 dotenv.config();
@@ -121,12 +122,14 @@ initDb().then(() => {
   const adminRoutes  = require('./routes/admin');
   const marketRoutes = require('./routes/market');
   const questRoutes = require('./routes/quests');
+  const messageRoutes = require('./routes/messages');
 
   app.use('/api', authRoutes);
   app.use('/api/profile', authenticateToken, profileRoutes);
   app.use('/api/farm', authenticateToken, farmRoutes);
   app.use('/api/market', authenticateToken, marketRoutes);
   app.use('/api/quests', authenticateToken, questRoutes);
+  app.use('/api/messages', authenticateToken, messageRoutes);
 
   // Gold Price Scraper Endpoint
   app.get('/api/gold', authenticateToken, (req, res) => {
@@ -244,6 +247,7 @@ initDb().then(() => {
   setupXiDachSockets(io);
   setupShurikenSockets(io);
   setupSpySockets(io);
+  setupMessageSockets(io);
 
 
   const houseRooms = {};

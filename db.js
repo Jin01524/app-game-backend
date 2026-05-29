@@ -112,6 +112,18 @@ async function initDb() {
     )
   `);
 
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      sender_id INTEGER NOT NULL,
+      recipient_id INTEGER,
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
   await runSql(`INSERT INTO settings (key, value) VALUES ('goalWidth', '80') ON CONFLICT (key) DO NOTHING`);
