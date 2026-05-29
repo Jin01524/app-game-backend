@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getOne, runSql } = require('../db');
 const settingsManager = require('../settingsManager');
-const { parseJSON, addToBackpack } = require('../utils');
+const { parseJSON, addToBackpack, getBackpackItemCount, removeFromBackpack } = require('../utils');
 const questManager = require('../questManager');
 
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -50,34 +50,62 @@ router.post('/sell', async (req, res) => {
     return res.status(400).json({ error: 'Số lượng không hợp lệ' });
   }
 
-  // Check inventory
-  const item = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
-  if (!item || item.quantity < sellQty) {
+  // 1. Get warehouse storage quantity of lúa
+  const storageItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+  const storageQty = storageItem ? storageItem.quantity : 0;
+
+  // 2. Get backpack quantity of lúa
+  const user = await getOne('SELECT backpack, xu FROM users WHERE id = ?', [userId]);
+  const backpack = parseJSON(user.backpack, [null, null]);
+  const backpackQty = getBackpackItemCount(backpack, 'lua');
+
+  // 3. Check if total is sufficient
+  const totalQty = storageQty + backpackQty;
+  if (totalQty < sellQty) {
     return res.status(400).json({ error: 'Không đủ lúa để bán' });
   }
 
-  const market = await getMarketState();
-  const totalEarned = sellQty * market.price;
+  // 4. Perform deductions
+  let remainingToDeduct = sellQty;
+  let newStorageQty = storageQty;
+  let newBackpack = [...backpack];
 
-  // Deduct item
-  await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [sellQty, userId, 'lua']);
-  
-  // Add money
-  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
-
-  // Clean up inventory if zero
-  const updatedItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
-  if (updatedItem && updatedItem.quantity <= 0) {
-    await runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+  // Deduct from warehouse storage first
+  if (newStorageQty > 0) {
+    const deductFromStorage = Math.min(remainingToDeduct, newStorageQty);
+    newStorageQty -= deductFromStorage;
+    remainingToDeduct -= deductFromStorage;
   }
 
+  // Deduct remaining from backpack
+  if (remainingToDeduct > 0) {
+    const removeResult = removeFromBackpack(newBackpack, 'lua', remainingToDeduct);
+    newBackpack = removeResult.backpack;
+    remainingToDeduct = 0; // completely deducted since totalQty >= sellQty
+  }
+
+  // 5. Update database - Warehouse storage
+  if (newStorageQty <= 0) {
+    await runSql('DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
+  } else {
+    await runSql('UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND item_id = ?', [newStorageQty, userId, 'lua']);
+  }
+
+  // 6. Update database - Backpack
+  await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(newBackpack), userId]);
+
+  // 7. Add money and update quests
+  const market = await getMarketState();
+  const totalEarned = sellQty * market.price;
+  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
+
   // Get new user state
-  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  const updatedUser = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
 
   // Update quest progress for selling wheat
   await questManager.updateQuestProgress(userId, 'ban_lua', sellQty);
 
-  res.json({ success: true, earned: totalEarned, currentXu: user.xu });
+  res.json({ success: true, earned: totalEarned, currentXu: updatedUser.xu });
 });
 
 router.post('/buy-animal', async (req, res) => {
