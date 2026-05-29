@@ -162,11 +162,8 @@ router.post('/plant', requireAuth, async (req, res) => {
   await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
   
-  // Update quest progress for planting (stage 1 of gieo_thu_hoach)
-  const q = await questManager.getUserQuest(userId, 'gieo_thu_hoach');
-  if (q && q.progress === 0) {
-    await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1);
-  }
+  // Update quest progress for planting (stage 1 of gieo_thu_hoach, cap at 1)
+  await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 1);
 
   res.json({ message: 'Đã gieo hạt' });
 });
@@ -202,11 +199,8 @@ router.post('/harvest', requireAuth, async (req, res) => {
   // Reset farm state
   await runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
   
-  // Update quest progress for harvesting (stage 2 of gieo_thu_hoach)
-  const q = await questManager.getUserQuest(userId, 'gieo_thu_hoach');
-  if (q && q.progress === 1) {
-    await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1);
-  }
+  // Update quest progress for harvesting (stage 2 of gieo_thu_hoach, cap at 2)
+  await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 2);
 
   res.json({ message: `Thu hoạch thành công ${amount} lúa!` });
 });

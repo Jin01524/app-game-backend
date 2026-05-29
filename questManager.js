@@ -103,23 +103,26 @@ async function getUserQuest(userId, questKey) {
 /**
  * Update quest progress for a user
  */
-async function updateQuestProgress(userId, questKey, incrementAmount) {
+async function updateQuestProgress(userId, questKey, incrementAmount, progressCap) {
   const config = QUEST_CONFIGS[questKey];
   if (!config) return;
 
-  const current = await getUserQuest(userId, questKey);
-  if (current.claimed) return; // Already claimed/finished
+  const cap = progressCap != null ? progressCap : config.maxProgress;
 
-  let newProgress = Math.min(current.progress + incrementAmount, config.maxProgress);
-  let completed = newProgress >= config.maxProgress;
-  let claimed = current.claimed;
-
+  // Ensure record exists (no-op if already present)
   await runSql(`
-    INSERT INTO user_quests (user_id, quest_key, progress, completed, claimed)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (user_id, quest_key)
-    DO UPDATE SET progress = EXCLUDED.progress, completed = EXCLUDED.completed, claimed = EXCLUDED.claimed, updated_at = CURRENT_TIMESTAMP
-  `, [userId, questKey, newProgress, completed ? 1 : 0, claimed ? 1 : 0]);
+    INSERT OR IGNORE INTO user_quests (user_id, quest_key, progress, completed, claimed)
+    VALUES (?, ?, 0, 0, 0)
+  `, [userId, questKey]);
+
+  // Atomic update: only increment if not completed, not claimed, and progress < cap
+  await runSql(`
+    UPDATE user_quests
+    SET progress = MIN(progress + ?, ?),
+        completed = CASE WHEN MIN(progress + ?, ?) >= ? THEN 1 ELSE 0 END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ? AND quest_key = ? AND completed = 0 AND claimed = 0 AND progress < ?
+  `, [incrementAmount, config.maxProgress, incrementAmount, config.maxProgress, config.maxProgress, userId, questKey, cap]);
 }
 
 /**
