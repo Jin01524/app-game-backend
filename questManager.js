@@ -100,28 +100,28 @@ async function getUserQuest(userId, questKey) {
   };
 }
 
-/**
- * Update quest progress for a user
- */
 async function updateQuestProgress(userId, questKey, incrementAmount, progressCap) {
   const config = QUEST_CONFIGS[questKey];
   if (!config) return;
 
   const cap = progressCap != null ? progressCap : config.maxProgress;
 
-  // Ensure record exists (no-op if already present)
+  // Ensure record exists (PostgreSQL ON CONFLICT DO NOTHING with proper booleans)
   await runSql(`
-    INSERT OR IGNORE INTO user_quests (user_id, quest_key, progress, completed, claimed)
-    VALUES (?, ?, 0, 0, 0)
+    INSERT INTO user_quests (user_id, quest_key, progress, completed, claimed)
+    VALUES (?, ?, 0, false, false)
+    ON CONFLICT (user_id, quest_key) DO NOTHING
   `, [userId, questKey]);
 
-  // Atomic update: only increment if not completed, not claimed, and progress < cap
+  // Atomic update: only increment if not completed, not claimed, and progress < cap.
+  // Using LEAST instead of MIN scalar function for PostgreSQL.
+  // Using boolean comparison values for PostgreSQL.
   await runSql(`
     UPDATE user_quests
-    SET progress = MIN(progress + ?, ?),
-        completed = CASE WHEN MIN(progress + ?, ?) >= ? THEN 1 ELSE 0 END,
+    SET progress = LEAST(progress + ?, ?),
+        completed = CASE WHEN LEAST(progress + ?, ?) >= ? THEN true ELSE false END,
         updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ? AND quest_key = ? AND completed = 0 AND claimed = 0 AND progress < ?
+    WHERE user_id = ? AND quest_key = ? AND completed = false AND claimed = false AND progress < ?
   `, [incrementAmount, config.maxProgress, incrementAmount, config.maxProgress, config.maxProgress, userId, questKey, cap]);
 }
 
@@ -140,8 +140,8 @@ async function claimQuestReward(userId, questKey) {
     throw new Error('Nhiệm vụ đã được nhận thưởng trước đó');
   }
 
-  // Update claimed status
-  await runSql('UPDATE user_quests SET claimed = ? WHERE user_id = ? AND quest_key = ?', [1, userId, questKey]);
+  // Update claimed status using boolean true for PostgreSQL
+  await runSql('UPDATE user_quests SET claimed = true WHERE user_id = ? AND quest_key = ?', [userId, questKey]);
 
   // Give reward if any
   if (config.reward > 0) {
