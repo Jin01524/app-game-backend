@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { getOne, getAll, runSql } = require('../db');
+const { getOne, getAll, runSql, logActivity } = require('../db');
 
 const router = express.Router();
 
@@ -138,6 +138,14 @@ router.post('/settings', (req, res) => {
     });
   }
   res.json({ message: 'Đã cập nhật cấu hình', settings: settingsManager.getAllSettings() });
+});
+
+// ── GET /api/admin/logs ─────────────────────────────────────────────────────
+router.get('/logs', async (req, res) => {
+  const logs = await getAll(
+    'SELECT id, username, action_type, details, xu_change, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 500'
+  );
+  res.json(logs);
 });
 
 module.exports = router;

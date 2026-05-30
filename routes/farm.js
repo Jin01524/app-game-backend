@@ -1,5 +1,5 @@
 const express = require('express');
-const { getOne, getAll, runSql } = require('../db');
+const { getOne, getAll, runSql, logActivity } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, removeFromBackpack, getBackpackItemCount, addToBackpack } = require('../utils');
 const { simulateCowProgress } = require('../cowSimulation');
@@ -125,6 +125,11 @@ router.post('/buy', requireAuth, async (req, res) => {
   await runSql('UPDATE users SET xu = xu - 100 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET level = 1, state = 'idle' WHERE user_id = ?", [userId]);
   
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_buy_farm', 'Mua mảnh ruộng đầu tiên', -100);
+  } catch (e) {}
+  
   // Update quest progress for buying land
   await questManager.updateQuestProgress(userId, 'mua_ruong', 1);
 
@@ -146,6 +151,11 @@ router.post('/upgrade', requireAuth, async (req, res) => {
   await runSql('UPDATE users SET xu = xu - ? WHERE id = ?', [cost, userId]);
   await runSql('UPDATE user_farms SET level = level + 1 WHERE user_id = ?', [userId]);
   
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_upgrade', `Nâng cấp ruộng lên Cấp ${farm.level + 1}`, -cost);
+  } catch (e) {}
+  
   res.json({ message: 'Nâng cấp thành công' });
 });
 
@@ -161,6 +171,11 @@ router.post('/plant', requireAuth, async (req, res) => {
   
   await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_plant', 'Gieo hạt lúa', -10);
+  } catch (e) {}
   
   // Update quest progress for planting (stage 1 of gieo_thu_hoach, cap at 1)
   await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 1);
@@ -199,6 +214,11 @@ router.post('/harvest', requireAuth, async (req, res) => {
   // Reset farm state
   await runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
   
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_harvest', `Thu hoạch thành công ${amount} lúa`);
+  } catch (e) {}
+  
   // Update quest progress for harvesting (stage 2 of gieo_thu_hoach, cap at 2)
   await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 2);
 
@@ -213,6 +233,11 @@ router.post('/buy-slot', requireAuth, async (req, res) => {
   if (user.xu < 250) return res.status(400).json({ error: 'Không đủ xu (Cần 250 xu)' });
   
   await runSql('UPDATE users SET xu = xu - 250, inventory_slots = COALESCE(inventory_slots, 5) + 1 WHERE id = ?', [userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_upgrade_backpack', 'Mua thêm 1 ô balo', -250);
+  } catch (e) {}
   
   res.json({ message: 'Đã mua 1 ô túi đồ mới!' });
 });
@@ -265,6 +290,11 @@ router.post('/place-animal', requireAuth, async (req, res) => {
   // Add to farm
   await runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
   
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_place_animal', `Thả 1 con ${animal} vào chuồng`);
+  } catch (e) {}
+  
   res.json({ message: 'Thả thú nuôi vào chuồng thành công!', backpack });
 });
 
@@ -304,6 +334,11 @@ router.post('/sell-animals', requireAuth, async (req, res) => {
   // Update DB
   await runSql('UPDATE user_farms SET animals = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(currentAnimals), JSON.stringify(animalsData), userId]);
   await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_sell_animal', `Bán ${sellCount} con bò`, totalEarned);
+  } catch (e) {}
   
   const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
 
@@ -387,6 +422,11 @@ router.post('/feed', requireAuth, async (req, res) => {
   
   await runSql('UPDATE user_farms SET cage_inventory = ?, animals_data = ? WHERE user_id = ?', [JSON.stringify(cageInv), JSON.stringify(animalsData), userId]);
   
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'farming_feed', `Cho bò ăn ${actualAdded} rơm`);
+  } catch (e) {}
+  
   // Update quest progress for feeding cow
   await questManager.updateQuestProgress(userId, 'cho_bo_an', actualAdded);
 
@@ -436,6 +476,12 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
 
   // Update remaining products in cage
   await runSql('UPDATE user_farms SET cage_products = ? WHERE user_id = ?', [JSON.stringify(remainingProducts), userId]);
+  
+  // Log activity
+  try {
+    const collectedCount = products.length - remainingProducts.length;
+    await logActivity(req.user.username, 'farming_gather', `Thu hoạch sữa bò (${collectedCount} bình sữa)`);
+  } catch (e) {}
 
   if (full) {
     res.json({ message: `Balo đã đầy! Chỉ thu hoạch được một phần.`, counts });

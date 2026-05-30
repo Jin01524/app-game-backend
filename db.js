@@ -125,6 +125,17 @@ async function initDb() {
     )
   `);
 
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      details TEXT,
+      xu_change INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Ensure is_read column exists in existing database
   await runSql(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE`);
 
@@ -164,4 +175,15 @@ async function seedUsers() {
   }
 }
 
-module.exports = { initDb, getOne, getAll, runSql, pool };
+async function logActivity(username, actionType, details = '', xuChange = 0) {
+  try {
+    await runSql(
+      'INSERT INTO activity_logs (username, action_type, details, xu_change) VALUES (?, ?, ?, ?)',
+      [username, actionType, details, xuChange]
+    );
+  } catch (err) {
+    console.error('logActivity error:', err);
+  }
+}
+
+module.exports = { initDb, getOne, getAll, runSql, pool, logActivity };

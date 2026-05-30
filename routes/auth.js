@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { getOne, runSql } = require('../db');
+const { getOne, runSql, logActivity } = require('../db');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'te-lan-4.2-super-secret-key-2024';
@@ -41,6 +41,11 @@ router.post('/login', async (req, res) => {
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
+  
+  // Log login activity
+  try {
+    await logActivity(user.username, 'login', 'Đăng nhập vào hệ thống');
+  } catch(e) {}
 
   res.json({
     message: 'Đăng nhập thành công',

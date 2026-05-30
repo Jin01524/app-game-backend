@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getOne, runSql } = require('../db');
+const { getOne, runSql, logActivity } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, addToBackpack, getBackpackItemCount, removeFromBackpack } = require('../utils');
 const questManager = require('../questManager');
@@ -98,6 +98,11 @@ router.post('/sell', async (req, res) => {
   const market = await getMarketState();
   const totalEarned = sellQty * market.price;
   await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'market_sell', `Bán ${sellQty} lúa với giá ${market.price} xu/lúa`, totalEarned);
+  } catch (e) {}
 
   // Get new user state
   const updatedUser = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
@@ -125,6 +130,11 @@ router.post('/buy-animal', async (req, res) => {
 
   // Deduct Xu and save backpack
   await runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cowPrice, JSON.stringify(result.backpack), userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'market_buy_animal', 'Mua 1 con bò ở chợ', -cowPrice);
+  } catch (e) {}
 
   // Update quest progress for buying cow
   await questManager.updateQuestProgress(userId, 'mua_bo', 1);
@@ -153,6 +163,11 @@ router.post('/buy-item', async (req, res) => {
 
   // Deduct Xu and save backpack
   await runSql('UPDATE users SET xu = xu - ?, backpack = ? WHERE id = ?', [cost, JSON.stringify(result.backpack), userId]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'market_buy_item', `Mua ${quantity} rơm ở chợ`, -cost);
+  } catch (e) {}
 
   res.json({ message: `Mua ${quantity} ${itemId} thành công!`, xu: user.xu - cost, backpack: result.backpack });
 });

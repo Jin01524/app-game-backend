@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { getOne, getAll, runSql } = require('../db');
+const { getOne, getAll, runSql, logActivity } = require('../db');
 const { parseJSON, addToBackpack, removeFromBackpack } = require('../utils');
 const questManager = require('../questManager');
 
@@ -100,6 +100,11 @@ router.post('/game/score', requireAuth, async (req, res) => {
 
   const xuEarned = goals * 2;
   await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [xuEarned, req.user.id]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'game_play', `Chơi sút bóng đạt ${goals} bàn thắng`, xuEarned);
+  } catch (e) {}
   
   // Update quest progress for sút bóng
   await questManager.updateQuestProgress(req.user.id, 'sut_bong', xuEarned);
@@ -346,9 +351,32 @@ router.post('/trade/xu', requireAuth, async (req, res) => {
 
   await runSql('UPDATE users SET xu = xu - ? WHERE id = ?', [parsedAmount, senderId]);
   await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [parsedAmount, targetUser.id]);
+  
+  // Log activity
+  try {
+    await logActivity(req.user.username, 'coin_transfer_send', `Chuyển ${parsedAmount} xu cho người dùng ${targetUsername}`, -parsedAmount);
+    await logActivity(targetUsername, 'coin_transfer_receive', `Nhận ${parsedAmount} xu từ người dùng ${req.user.username}`, parsedAmount);
+  } catch (e) {}
 
   const newSenderXu = sender.xu - parsedAmount;
   res.json({ message: `Đã gửi ${parsedAmount} xu cho ${targetUsername}`, xu: newSenderXu });
 });
 
 module.exports = router;
+
+/**
+ * POST /api/profile/log-utility
+ * Body: { utilityKey, utilityName }
+ */
+router.post('/log-utility', requireAuth, async (req, res) => {
+  const { utilityKey, utilityName } = req.body;
+  if (!utilityKey || !utilityName) {
+    return res.status(400).json({ error: 'Thiếu thông tin tiện ích' });
+  }
+  try {
+    await logActivity(req.user.username, 'utility_access', `Truy cập tiện ích: ${utilityName}`);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Lỗi ghi log' });
+  }
+});
