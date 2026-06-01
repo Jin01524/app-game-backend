@@ -380,7 +380,7 @@ router.post('/log-utility', requireAuth, async (req, res) => {
 });
 
 // ── Google Photos Scraper & Sync Utilities ──────────────────────────────────
-const https = require('https');
+const { extractAlbum } = require('gphotos-scraper');
 const albumUrl = "https://photos.google.com/share/AF1QipMKAT4_MsLhIA5kdLquRrYnMr-qj7sR49XVD-G2BwMqBlLTrEG2UQkhcb5FtkwJvQ?key=cnczbzRqOHhhNjl0Vm5PbkNIaVVrY2ZZLWVQLWhR";
 
 const LOCATION_RULES = [
@@ -408,61 +408,6 @@ function getMappedLocation(dateStr) {
   return null;
 }
 
-function fetchAlbumHtml() {
-  return new Promise((resolve, reject) => {
-    const options = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      },
-      timeout: 10000
-    };
-    https.get(albumUrl, options, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume();
-        return reject(new Error(`Failed to load Google Photos shared album, status code: ${res.statusCode}`));
-      }
-      let html = '';
-      res.on('data', chunk => html += chunk);
-      res.on('end', () => resolve(html));
-    }).on('error', reject);
-  });
-}
-
-function parsePhotosFromHtml(html) {
-  const regex = /\[\s*['"](AF1Qip[a-zA-Z0-9_-]{33,})['"]\s*,\s*\[\s*['"](https:\/\/[a-zA-Z0-9.-]+\.googleusercontent\.com\/[^'"]+)['"]/g;
-  const photos = [];
-  const seenIds = new Set();
-  let match;
-  while ((match = regex.exec(html)) !== null) {
-    if (photos.length >= 3000) break; // Limit to maximum 3000 items to optimize performance
-    const id = match[1];
-    const url = match[2];
-    if (!seenIds.has(id)) {
-      seenIds.add(id);
-      
-      const startIdx = Math.max(0, match.index - 100);
-      const endIdx = Math.min(html.length, match.index + 800);
-      const chunk = html.substring(startIdx, endIdx);
-      
-      const isVideo = chunk.includes('video') || chunk.includes('mp4') || chunk.includes('video/mp4');
-      
-      const tsMatch = chunk.match(/\b\d{13}\b/);
-      let dateStr = "Không rõ";
-      if (tsMatch) {
-        const d = new Date(parseInt(tsMatch[0]));
-        if (!isNaN(d.getTime())) {
-          dateStr = d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-        }
-      }
-      
-      const location = getMappedLocation(dateStr);
-      
-      photos.push({ id, url, date: dateStr, isVideo, location });
-    }
-  }
-  return photos;
-}
-
 /**
  * GET /api/profile/photos
  * Returns the cached photos album list from DB
@@ -482,16 +427,29 @@ router.get('/photos', requireAuth, async (req, res) => {
 
 /**
  * POST /api/profile/photos/sync
- * Scrapes Google Photos shared album and updates DB cache
+ * Scrapes Google Photos shared album and updates DB cache using gphotos-scraper
  */
 router.post('/photos/sync', requireAuth, async (req, res) => {
   try {
-    const html = await fetchAlbumHtml();
-    const photos = parsePhotosFromHtml(html);
-    
-    if (photos.length === 0) {
+    const album = await extractAlbum(albumUrl);
+    if (!album || !album.photos || album.photos.length === 0) {
       return res.status(400).json({ error: 'Không tìm thấy ảnh nào trong album để đồng bộ' });
     }
+
+    const photos = album.photos.map(p => {
+      const isVideo = p.mimeType && p.mimeType.startsWith('video/');
+      const dateStr = p.createdAt 
+        ? (new Date(p.createdAt).toLocaleDateString('vi-VN') + ' ' + new Date(p.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })) 
+        : "Không rõ";
+      const location = getMappedLocation(dateStr);
+      return {
+        id: p.id,
+        url: p.url,
+        date: dateStr,
+        isVideo: !!isVideo,
+        location: location
+      };
+    });
     
     await runSql(
       "INSERT INTO settings (key, value) VALUES ('photos_album_data', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
