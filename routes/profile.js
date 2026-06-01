@@ -362,8 +362,6 @@ router.post('/trade/xu', requireAuth, async (req, res) => {
   res.json({ message: `Đã gửi ${parsedAmount} xu cho ${targetUsername}`, xu: newSenderXu });
 });
 
-module.exports = router;
-
 /**
  * POST /api/profile/log-utility
  * Body: { utilityKey, utilityName }
@@ -380,3 +378,137 @@ router.post('/log-utility', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Lỗi ghi log' });
   }
 });
+
+// ── Google Photos Scraper & Sync Utilities ──────────────────────────────────
+const https = require('https');
+const albumUrl = "https://photos.google.com/share/AF1QipMKAT4_MsLhIA5kdLquRrYnMr-qj7sR49XVD-G2BwMqBlLTrEG2UQkhcb5FtkwJvQ?key=cnczbzRqOHhhNjl0Vm5PbkNIaVVrY2ZZLWVQLWhR";
+
+const LOCATION_RULES = [
+  { start: "26/04/2026", end: "27/04/2026", location: "Kon Tum" },
+  { start: "28/04/2026", end: "31/12/2026", location: "Đà Nẵng" }
+];
+
+function parseDate(dateStr) {
+  if (!dateStr || dateStr === "Không rõ") return null;
+  const parts = dateStr.split(" ")[0].split("/");
+  if (parts.length < 3) return null;
+  return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+}
+
+function getMappedLocation(dateStr) {
+  const d = parseDate(dateStr);
+  if (!d) return null;
+  for (const rule of LOCATION_RULES) {
+    const start = parseDate(rule.start);
+    const end = parseDate(rule.end);
+    if (start && end && d >= start && d <= end) {
+      return rule.location;
+    }
+  }
+  return null;
+}
+
+function fetchAlbumHtml() {
+  return new Promise((resolve, reject) => {
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      timeout: 10000
+    };
+    https.get(albumUrl, options, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`Failed to load Google Photos shared album, status code: ${res.statusCode}`));
+      }
+      let html = '';
+      res.on('data', chunk => html += chunk);
+      res.on('end', () => resolve(html));
+    }).on('error', reject);
+  });
+}
+
+function parsePhotosFromHtml(html) {
+  const regex = /\[\s*"(AF1Qip[a-zA-Z0-9_-]{33,})"\s*,\s*\[\s*"(https:\/\/lh3\.googleusercontent\.com\/[^"]+)"/g;
+  const photos = [];
+  const seenIds = new Set();
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const id = match[1];
+    const url = match[2];
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      
+      const startIdx = Math.max(0, match.index - 100);
+      const endIdx = Math.min(html.length, match.index + 800);
+      const chunk = html.substring(startIdx, endIdx);
+      
+      const isVideo = chunk.includes('video') || chunk.includes('mp4') || chunk.includes('video/mp4');
+      
+      const tsMatch = chunk.match(/\b\d{13}\b/);
+      let dateStr = "Không rõ";
+      if (tsMatch) {
+        const d = new Date(parseInt(tsMatch[0]));
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+      }
+      
+      const location = getMappedLocation(dateStr);
+      
+      photos.push({ id, url, date: dateStr, isVideo, location });
+    }
+  }
+  return photos;
+}
+
+/**
+ * GET /api/profile/photos
+ * Returns the cached photos album list from DB
+ */
+router.get('/photos', requireAuth, async (req, res) => {
+  try {
+    const row = await getOne("SELECT value FROM settings WHERE key = 'photos_album_data'");
+    if (row && row.value) {
+      return res.json(JSON.parse(row.value));
+    }
+    res.json([]);
+  } catch (e) {
+    console.error('Fetch photos error:', e);
+    res.status(500).json({ error: 'Lỗi lấy album ảnh từ database' });
+  }
+});
+
+/**
+ * POST /api/profile/photos/sync
+ * Scrapes Google Photos shared album and updates DB cache
+ */
+router.post('/photos/sync', requireAuth, async (req, res) => {
+  try {
+    const html = await fetchAlbumHtml();
+    const photos = parsePhotosFromHtml(html);
+    
+    if (photos.length === 0) {
+      return res.status(400).json({ error: 'Không tìm thấy ảnh nào trong album để đồng bộ' });
+    }
+    
+    await runSql(
+      "INSERT INTO settings (key, value) VALUES ('photos_album_data', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+      [JSON.stringify(photos)]
+    );
+    
+    // Log activity
+    await logActivity(
+      req.user.username,
+      'utility_sync_photos',
+      `Đồng bộ album kỷ niệm Google Photos thành công: ${photos.length} ảnh/video`
+    );
+    
+    res.json({ success: true, count: photos.length, photos });
+  } catch (e) {
+    console.error('Photos sync error:', e);
+    res.status(500).json({ error: e.message || 'Lỗi đồng bộ album' });
+  }
+});
+
+module.exports = router;
