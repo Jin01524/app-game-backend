@@ -470,4 +470,66 @@ router.post('/photos/sync', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/profile/accommodation
+ * Fetches rental rooms from Cho Tot public API gateway
+ */
+router.get('/accommodation', requireAuth, async (req, res) => {
+  try {
+    const https = require('https');
+    const apiUrl = "https://gateway.chotot.com/v1/public/ad-listing?cg=1050&region=3&limit=30";
+    
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+      },
+      timeout: 8000
+    };
+
+    https.get(apiUrl, options, (apiRes) => {
+      if (apiRes.statusCode !== 200) {
+        apiRes.resume();
+        return res.status(apiRes.statusCode).json({ error: `Cho Tot API returned status ${apiRes.statusCode}` });
+      }
+
+      let body = '';
+      apiRes.on('data', chunk => body += chunk);
+      apiRes.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          if (!data || !data.ads) {
+            return res.json([]);
+          }
+
+          const rooms = data.ads.map(ad => ({
+            id: ad.ad_id,
+            title: ad.subject,
+            price: ad.price_string || (ad.price ? `${(ad.price/1000000).toFixed(1).replace('.0', '')} triệu/tháng` : 'Thỏa thuận'),
+            priceVal: ad.price,
+            area: ad.size || 0,
+            district: ad.area_name || 'Đà Nẵng',
+            ward: ad.ward_name || '',
+            image: ad.image || 'https://static.chotot.com/storage/default_images/pty/social.png',
+            date: ad.date || 'Gần đây',
+            url: `https://www.nhatot.com/room/${ad.list_id}.htm`,
+            body: ad.body || ''
+          }));
+
+          res.json(rooms);
+        } catch (err) {
+          console.error('Error parsing Cho Tot response:', err);
+          res.status(500).json({ error: 'Lỗi phân tích dữ liệu phòng trọ' });
+        }
+      });
+    }).on('error', (err) => {
+      console.error('Error fetching from Cho Tot:', err);
+      res.status(500).json({ error: 'Lỗi kết nối máy chủ Chợ Tốt' });
+    });
+  } catch (e) {
+    console.error('Accommodation sync error:', e);
+    res.status(500).json({ error: 'Lỗi đồng bộ phòng trọ' });
+  }
+});
+
 module.exports = router;
