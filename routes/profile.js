@@ -694,4 +694,15 @@ router.post('/travel/leave', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/profile/travel/config
+ * Returns secure travel configurations (like Google Maps API Key)
+ */
+router.get('/travel/config', requireAuth, async (req, res) => {
+  res.json({
+    success: true,
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
+  });
+});
+
 module.exports = router;
