@@ -12,6 +12,7 @@ const { setupShurikenSockets } = require('./shurikenManager');
 const { setupSpySockets } = require('./spyManager');
 const { setupMessageSockets } = require('./messageManager');
 const { setupWerewolfSockets } = require('./werewolfManager');
+const { setupTravelSockets } = require('./travelManager');
 
 
 dotenv.config();
@@ -250,6 +251,7 @@ initDb().then(() => {
   setupSpySockets(io);
   setupMessageSockets(io);
   setupWerewolfSockets(io);
+  setupTravelSockets(io);
 
 
   const houseRooms = {};

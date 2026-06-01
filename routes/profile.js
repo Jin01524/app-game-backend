@@ -532,4 +532,166 @@ router.get('/accommodation', requireAuth, async (req, res) => {
   }
 });
 
+// ── Where is your team? (Travel Map & GPS Tracker) ──────────────────────────
+
+/**
+ * POST /api/profile/travel/create
+ * Body: { name }
+ */
+router.post('/travel/create', requireAuth, async (req, res) => {
+  const { name } = req.body;
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Tên chuyến đi không được để trống' });
+  }
+
+  try {
+    // Generate unique group code
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    let isUnique = false;
+    while (!isUnique) {
+      code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const existing = await getOne("SELECT id FROM travel_groups WHERE code = ?", [code]);
+      if (!existing) isUnique = true;
+    }
+
+    // Create group
+    await runSql(
+      "INSERT INTO travel_groups (code, name, leader_username) VALUES (?, ?, ?)",
+      [code, name.trim(), req.user.username]
+    );
+
+    const group = await getOne("SELECT * FROM travel_groups WHERE code = ?", [code]);
+    if (!group) {
+      return res.status(500).json({ error: 'Lỗi tạo nhóm phượt' });
+    }
+
+    // Add leader to members
+    await runSql(
+      "INSERT INTO group_members (group_id, username, status) VALUES (?, ?, 'active') ON CONFLICT DO NOTHING",
+      [group.id, req.user.username]
+    );
+
+    res.json({ success: true, group });
+  } catch (e) {
+    console.error('Travel create error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi tạo nhóm phượt' });
+  }
+});
+
+/**
+ * POST /api/profile/travel/join
+ * Body: { code }
+ */
+router.post('/travel/join', requireAuth, async (req, res) => {
+  const { code } = req.body;
+  if (!code || code.trim().length === 0) {
+    return res.status(400).json({ error: 'Mã nhóm không được để trống' });
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+
+  try {
+    const group = await getOne("SELECT * FROM travel_groups WHERE code = ?", [cleanCode]);
+    if (!group) {
+      return res.status(404).json({ error: 'Không tìm thấy nhóm phượt với mã này!' });
+    }
+
+    // Add user to group_members
+    await runSql(
+      "INSERT INTO group_members (group_id, username, status) VALUES (?, ?, 'active') ON CONFLICT (group_id, username) DO UPDATE SET status = 'active'",
+      [group.id, req.user.username]
+    );
+
+    res.json({ success: true, group });
+  } catch (e) {
+    console.error('Travel join error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi gia nhập nhóm phượt' });
+  }
+});
+
+/**
+ * GET /api/profile/travel/active
+ * Gets the active group for the user
+ */
+router.get('/travel/active', requireAuth, async (req, res) => {
+  try {
+    const activeGroup = await getOne(
+      "SELECT g.*, m.status FROM group_members m JOIN travel_groups g ON m.group_id = g.id WHERE m.username = ? ORDER BY g.created_at DESC LIMIT 1",
+      [req.user.username]
+    );
+    res.json({ success: true, group: activeGroup });
+  } catch (e) {
+    console.error('Travel active query error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi truy vấn nhóm hoạt động' });
+  }
+});
+
+/**
+ * GET /api/profile/travel/group/:id
+ * Gets details of a specific group, including its members and custom RPG styling
+ */
+router.get('/travel/group/:id', requireAuth, async (req, res) => {
+  const groupId = req.params.id;
+
+  try {
+    const group = await getOne("SELECT * FROM travel_groups WHERE id = ?", [groupId]);
+    if (!group) {
+      return res.status(404).json({ error: 'Không tìm thấy nhóm phượt' });
+    }
+
+    // Query all members with custom RPG character colors
+    const members = await getAll(
+      `SELECT m.username, m.lat, m.lng, m.status, m.last_updated, u.display_name,
+              u.char_head_color, u.char_hair_color, u.char_body_color, u.char_legs_color, u.char_shoe_color
+       FROM group_members m
+       JOIN users u ON m.username = u.username
+       WHERE m.group_id = ?
+       ORDER BY m.username = ? DESC, m.last_updated DESC`,
+      [groupId, group.leader_username]
+    );
+
+    res.json({ success: true, group, members });
+  } catch (e) {
+    console.error('Travel group details query error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi truy vấn thông tin nhóm' });
+  }
+});
+
+/**
+ * POST /api/profile/travel/leave
+ * Body: { groupId }
+ */
+router.post('/travel/leave', requireAuth, async (req, res) => {
+  const { groupId } = req.body;
+  if (!groupId) {
+    return res.status(400).json({ error: 'Thiếu mã nhóm phượt' });
+  }
+
+  try {
+    // Remove member
+    await runSql(
+      "DELETE FROM group_members WHERE group_id = ? AND username = ?",
+      [groupId, req.user.username]
+    );
+
+    // If no members are left, clean up the group
+    const checkMembers = await getOne("SELECT COUNT(*) as count FROM group_members WHERE group_id = ?", [groupId]);
+    const memberCount = checkMembers ? parseInt(checkMembers.count, 10) : 0;
+    
+    if (memberCount === 0) {
+      await runSql("DELETE FROM travel_groups WHERE id = ?", [groupId]);
+      console.log(`[Travel DB] Deleted empty travel group: ID ${groupId}`);
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Travel leave error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi rời nhóm phượt' });
+  }
+});
+
 module.exports = router;

@@ -136,6 +136,29 @@ async function initDb() {
     )
   `);
 
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS travel_groups (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(10) UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      leader_username TEXT NOT NULL,
+      route_waypoints TEXT DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      group_id INTEGER REFERENCES travel_groups(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      lat DOUBLE PRECISION,
+      lng DOUBLE PRECISION,
+      status TEXT NOT NULL DEFAULT 'active',
+      last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (group_id, username)
+    )
+  `);
+
   // Ensure is_read column exists in existing database
   await runSql(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE`);
 
