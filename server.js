@@ -38,7 +38,7 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(cors({
   origin: ALLOWED_ORIGINS,
   credentials: true,

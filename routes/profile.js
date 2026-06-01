@@ -434,6 +434,7 @@ function parsePhotosFromHtml(html) {
   const seenIds = new Set();
   let match;
   while ((match = regex.exec(html)) !== null) {
+    if (photos.length >= 3000) break; // Limit to maximum 3000 items to optimize performance
     const id = match[1];
     const url = match[2];
     if (!seenIds.has(id)) {
