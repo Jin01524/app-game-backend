@@ -477,7 +477,7 @@ router.post('/photos/sync', requireAuth, async (req, res) => {
 router.get('/accommodation', requireAuth, async (req, res) => {
   try {
     const https = require('https');
-    const apiUrl = "https://gateway.chotot.com/v1/public/ad-listing?cg=1050&region=3&limit=30";
+    const apiUrl = "https://gateway.chotot.com/v1/public/ad-listing?cg=1050&region=3&limit=60";
     
     const options = {
       headers: {
