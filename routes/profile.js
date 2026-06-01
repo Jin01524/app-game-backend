@@ -429,7 +429,7 @@ function fetchAlbumHtml() {
 }
 
 function parsePhotosFromHtml(html) {
-  const regex = /\[\s*"(AF1Qip[a-zA-Z0-9_-]{33,})"\s*,\s*\[\s*"(https:\/\/lh3\.googleusercontent\.com\/[^"]+)"/g;
+  const regex = /\[\s*['"](AF1Qip[a-zA-Z0-9_-]{33,})['"]\s*,\s*\[\s*['"](https:\/\/[a-zA-Z0-9.-]+\.googleusercontent\.com\/[^'"]+)['"]/g;
   const photos = [];
   const seenIds = new Set();
   let match;

@@ -75,7 +75,7 @@ initDb().then(() => {
       return res.status(400).send('Missing url parameter');
     }
 
-    if (!videoUrl.startsWith('https://lh3.googleusercontent.com/')) {
+    if (!videoUrl.startsWith('https://') || !videoUrl.includes('.googleusercontent.com/')) {
       return res.status(403).send('Forbidden: Invalid proxy target');
     }
 
