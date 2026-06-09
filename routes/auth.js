@@ -63,6 +63,7 @@ router.post('/login', async (req, res) => {
       charLegsColor: user.char_legs_color || '#1e293b',
       charShoeColor: user.char_shoe_color || '#000000',
       backpack: JSON.parse(user.backpack || '[null, null]'),
+      characterType: user.character_type || 'FrogNinja',
     },
   });
 });
@@ -75,7 +76,7 @@ router.post('/logout', authenticateToken, (req, res) => {
 // ── GET /api/me ──────────────────────────────────────────────────────────────
 router.get('/me', authenticateToken, async (req, res) => {
   const user = await getOne(
-    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots FROM users WHERE id = ?',
+    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots, character_type FROM users WHERE id = ?',
     [req.user.id]
   );
   if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại' });
@@ -95,6 +96,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     charShoeColor: user.char_shoe_color || '#000000',
     backpack: JSON.parse(user.backpack || '[null, null]'),
     inventory_slots: user.inventory_slots || 5,
+    characterType: user.character_type || 'FrogNinja',
   });
 });
 

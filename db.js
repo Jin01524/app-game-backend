@@ -162,6 +162,9 @@ async function initDb() {
   // Ensure is_read column exists in existing database
   await runSql(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE`);
 
+  // Ensure character_type column exists in existing database
+  await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS character_type TEXT DEFAULT 'FrogNinja'`);
+
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
   await runSql(`INSERT INTO settings (key, value) VALUES ('goalWidth', '80') ON CONFLICT (key) DO NOTHING`);

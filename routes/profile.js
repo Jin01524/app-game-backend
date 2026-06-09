@@ -164,6 +164,24 @@ router.post('/character', requireAuth, async (req, res) => {
 });
 
 /**
+ * POST /api/profile/character-type
+ * Body: { characterType }
+ */
+router.post('/character-type', requireAuth, async (req, res) => {
+  const { characterType } = req.body;
+  if (!characterType) {
+    return res.status(400).json({ error: 'Thiếu loại nhân vật' });
+  }
+  const allowed = ['FrogNinja', 'Samurai'];
+  if (!allowed.includes(characterType)) {
+    return res.status(400).json({ error: 'Loại nhân vật không hợp lệ' });
+  }
+
+  await runSql('UPDATE users SET character_type = ? WHERE id = ?', [characterType, req.user.id]);
+  res.json({ message: 'Đổi nhân vật thành công', characterType });
+});
+
+/**
  * POST /api/profile/transfer
  * Body: { itemId: string, amount: number, direction: 'to_backpack' | 'to_storage' }
  */
