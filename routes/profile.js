@@ -172,7 +172,7 @@ router.post('/character-type', requireAuth, async (req, res) => {
   if (!characterType) {
     return res.status(400).json({ error: 'Thiếu loại nhân vật' });
   }
-  const allowed = ['FrogNinja', 'PinkMan'];
+  const allowed = ['FrogNinja', 'PinkMan', 'MaskDude'];
   if (!allowed.includes(characterType)) {
     return res.status(400).json({ error: 'Loại nhân vật không hợp lệ' });
   }
