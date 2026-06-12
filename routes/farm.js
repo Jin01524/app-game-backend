@@ -64,7 +64,8 @@ router.get('/visit/:username', requireAuth, async (req, res) => {
       yield: getYield(farm.level),
       animals: JSON.parse(farm.animals || '[]'),
       animals_data: JSON.parse(farm.animals_data || '[]'),
-      cage_inventory: JSON.parse(farm.cage_inventory || '[null, null, null, null]')
+      cage_inventory: JSON.parse(farm.cage_inventory || '[null, null, null, null]'),
+      crop_growth_time: settingsManager.getSetting('farm_crop_growth_time', 30)
     }
   });
 });
@@ -105,7 +106,8 @@ router.get('/', requireAuth, async (req, res) => {
       animals: JSON.parse(farm.animals || '[]'),
       animals_data: JSON.parse(farm.animals_data || '[]'),
       cage_inventory: JSON.parse(farm.cage_inventory || '[null, null, null, null]'),
-      cage_products: JSON.parse(farm.cage_products || '[]')
+      cage_products: JSON.parse(farm.cage_products || '[]'),
+      crop_growth_time: settingsManager.getSetting('farm_crop_growth_time', 30)
     },
     inventory,
     xu: user.xu,
