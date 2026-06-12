@@ -476,7 +476,7 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
 
   // Try to add to backpack
   for (const [item_id, quantity] of Object.entries(counts)) {
-    const resAdd = addToBackpack(backpack, item_id, quantity);
+    const resAdd = addToBackpack(backpack, item_id, quantity, 2);
     backpack = resAdd.backpack;
     if (resAdd.remaining > 0) {
       full = true;

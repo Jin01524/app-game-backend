@@ -6,7 +6,16 @@ function parseJSON(str, def) {
   }
 }
 
-function addToBackpack(backpack, itemId, qty, maxSlots = 16) {
+function addToBackpack(backpack, itemId, qty, maxSlots = 2) {
+  // Enforce backpack length
+  if (backpack.length !== maxSlots) {
+    const newBackpack = [];
+    for (let i = 0; i < maxSlots; i++) {
+      newBackpack.push(backpack[i] || null);
+    }
+    backpack = newBackpack;
+  }
+
   let remaining = qty;
   // Fill existing slots
   for (let i = 0; i < maxSlots; i++) {
@@ -31,6 +40,15 @@ function addToBackpack(backpack, itemId, qty, maxSlots = 16) {
 }
 
 function removeFromBackpack(backpack, itemId, qty) {
+  // Enforce backpack length of 2
+  if (backpack.length !== 2) {
+    const newBackpack = [];
+    for (let i = 0; i < 2; i++) {
+      newBackpack.push(backpack[i] || null);
+    }
+    backpack = newBackpack;
+  }
+
   let remaining = qty;
   for (let i = backpack.length - 1; i >= 0; i--) { // try to remove from rightmost slots first
     if (backpack[i] && backpack[i].item_id === itemId) {

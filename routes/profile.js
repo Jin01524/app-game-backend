@@ -198,7 +198,7 @@ router.post('/transfer', requireAuth, async (req, res) => {
     if (!invItem || invItem.quantity <= 0) return res.status(400).json({ error: 'Không có vật phẩm trong kho' });
     
     const takeAmount = Math.min(amount, invItem.quantity);
-    const result = addToBackpack(backpack, itemId, takeAmount);
+    const result = addToBackpack(backpack, itemId, takeAmount, 2);
     
     const actualTaken = takeAmount - result.remaining;
     if (actualTaken <= 0) return res.status(400).json({ error: 'Balo đã đầy hoặc không chứa được thêm' });
@@ -305,12 +305,12 @@ router.post('/trade/item', requireAuth, async (req, res) => {
 
   const targetUser = await getOne('SELECT id, backpack, inventory_slots FROM users WHERE username = ?', [targetUsername]);
   if (!targetUser) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
-  const targetMaxSlots = targetUser.inventory_slots || 5;
+  const targetMaxSlots = 2;
 
   const senderId = req.user.id;
   const sender = await getOne('SELECT backpack, inventory_slots FROM users WHERE id = ?', [senderId]);
-  const senderMaxSlots = sender.inventory_slots || 5;
-  let senderBackpack = parseJSON(sender.backpack, Array(senderMaxSlots).fill(null));
+  const senderMaxSlots = 2;
+  let senderBackpack = parseJSON(sender.backpack, [null, null]);
 
   // Check sender items
   const countBefore = senderBackpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
@@ -322,7 +322,7 @@ router.post('/trade/item', requireAuth, async (req, res) => {
   senderBackpack = removeResult.backpack;
 
   // Add to target
-  let targetBackpack = parseJSON(targetUser.backpack, Array(targetMaxSlots).fill(null));
+  let targetBackpack = parseJSON(targetUser.backpack, [null, null]);
   const addResult = addToBackpack(targetBackpack, itemId, takeAmount, targetMaxSlots);
   
   const actualTransferred = takeAmount - addResult.remaining;
