@@ -1,5 +1,5 @@
 const express = require('express');
-const { getOne, getAll, runSql, logActivity } = require('../db');
+const { getOne, getAll, runSql, logActivity, decayUserEnergy } = require('../db');
 const settingsManager = require('../settingsManager');
 const { parseJSON, removeFromBackpack, getBackpackItemCount, addToBackpack } = require('../utils');
 const { simulateCowProgress } = require('../cowSimulation');
@@ -173,8 +173,9 @@ router.post('/upgrade', requireAuth, async (req, res) => {
 // ── POST /api/farm/plant ─────────────────────────────────────────────────────
 router.post('/plant', requireAuth, async (req, res) => {
   const userId = req.user.id;
+  await decayUserEnergy(userId);
   const row = await getOne(
-    'SELECT u.xu, f.level, f.state FROM users u LEFT JOIN user_farms f ON f.user_id = u.id WHERE u.id = ?',
+    'SELECT u.xu, u.energy, f.level, f.state FROM users u LEFT JOIN user_farms f ON f.user_id = u.id WHERE u.id = ?',
     [userId]
   );
   const user = row;
@@ -184,7 +185,10 @@ router.post('/plant', requireAuth, async (req, res) => {
   if (farm.state !== 'idle') return res.status(400).json({ error: 'Ruộng đang không trống' });
   if (!user || user.xu < 10) return res.status(400).json({ error: 'Không đủ xu gieo hạt (Cần 10 xu)' });
   
-  await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
+  const currentEnergy = user.energy !== null ? user.energy : 6;
+  if (currentEnergy < 1) return res.status(400).json({ error: 'Không đủ năng lượng để trồng lúa (Cần ít nhất 1 năng lượng)' });
+
+  await runSql('UPDATE users SET xu = xu - 10, energy = energy - 1, energy_updated_at = CURRENT_TIMESTAMP WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
   
   // Log activity
@@ -197,7 +201,11 @@ router.post('/plant', requireAuth, async (req, res) => {
 
   // Lấy planted_at vừa ghi để trả về cho frontend cập nhật countdown
   const updatedFarm = await getOne("SELECT state, planted_at FROM user_farms WHERE user_id = ?", [userId]);
-  res.json({ message: 'Đã gieo hạt', farm: { state: 'growing', planted_at: updatedFarm ? updatedFarm.planted_at : new Date().toISOString() } });
+  res.json({ 
+    message: 'Đã gieo hạt', 
+    farm: { state: 'growing', planted_at: updatedFarm ? updatedFarm.planted_at : new Date().toISOString() },
+    energy: currentEnergy - 1
+  });
 });
 
 // ── POST /api/farm/harvest ───────────────────────────────────────────────────

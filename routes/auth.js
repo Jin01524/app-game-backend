@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { getOne, runSql, logActivity } = require('../db');
+const { getOne, runSql, logActivity, decayUserEnergy } = require('../db');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'te-lan-4.2-super-secret-key-2024';
@@ -71,6 +71,7 @@ router.post('/login', async (req, res) => {
       charShoeColor: user.char_shoe_color || '#000000',
       backpack: JSON.parse(user.backpack || '[null, null]'),
       characterType: user.character_type || 'FrogNinja',
+      energy: user.energy ?? 6,
     },
   });
 });
@@ -82,8 +83,9 @@ router.post('/logout', authenticateToken, (req, res) => {
 
 // ── GET /api/me ──────────────────────────────────────────────────────────────
 router.get('/me', authenticateToken, async (req, res) => {
+  await decayUserEnergy(req.user.id);
   const user = await getOne(
-    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots, character_type FROM users WHERE id = ?',
+    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots, character_type, energy FROM users WHERE id = ?',
     [req.user.id]
   );
   if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại' });
@@ -104,6 +106,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     backpack: JSON.parse(user.backpack || '[null, null]'),
     inventory_slots: user.inventory_slots || 5,
     characterType: user.character_type || 'FrogNinja',
+    energy: user.energy ?? 6,
   });
 });
 

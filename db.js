@@ -165,6 +165,10 @@ async function initDb() {
   // Ensure character_type column exists in existing database
   await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS character_type TEXT DEFAULT 'FrogNinja'`);
 
+  // Ensure energy and energy_updated_at columns exist
+  await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS energy INTEGER DEFAULT 6`);
+  await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS energy_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+
   // ── Performance Indexes ─────────────────────────────────────────────────────
   await runSql(`CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_inventory_user_id   ON user_inventory(user_id)`);
@@ -221,4 +225,30 @@ async function logActivity(username, actionType, details = '', xuChange = 0) {
   }
 }
 
-module.exports = { initDb, getOne, getAll, runSql, pool, logActivity };
+async function decayUserEnergy(userId) {
+  const user = await getOne('SELECT id, energy, energy_updated_at FROM users WHERE id = ?', [userId]);
+  if (!user) return null;
+
+  const now = new Date();
+  const lastUpdate = new Date(user.energy_updated_at || now);
+  const elapsedMs = now.getTime() - lastUpdate.getTime();
+  
+  const decayInterval = 2 * 60 * 1000; // 2 minutes
+  const decayCount = Math.floor(elapsedMs / decayInterval);
+
+  if (decayCount > 0) {
+    const newEnergy = Math.max(0, (user.energy !== null ? user.energy : 6) - decayCount);
+    const newUpdateTime = new Date(lastUpdate.getTime() + decayCount * decayInterval);
+    
+    await runSql('UPDATE users SET energy = ?, energy_updated_at = ? WHERE id = ?', [
+      newEnergy,
+      newUpdateTime,
+      userId
+    ]);
+    return { energy: newEnergy, energy_updated_at: newUpdateTime };
+  }
+  
+  return { energy: user.energy !== null ? user.energy : 6, energy_updated_at: user.energy_updated_at };
+}
+
+module.exports = { initDb, getOne, getAll, runSql, pool, logActivity, decayUserEnergy };

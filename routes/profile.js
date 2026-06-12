@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { getOne, getAll, runSql, logActivity } = require('../db');
+const { getOne, getAll, runSql, logActivity, decayUserEnergy } = require('../db');
 const { parseJSON, addToBackpack, removeFromBackpack } = require('../utils');
 const questManager = require('../questManager');
 
@@ -723,6 +723,75 @@ router.get('/travel/config', requireAuth, async (req, res) => {
   res.json({
     success: true,
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
+  });
+});
+
+router.post('/consume', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const { slotIdx } = req.body;
+
+  if (slotIdx === undefined || slotIdx === null || slotIdx < 0 || slotIdx > 1) {
+    return res.status(400).json({ error: 'Chỉ số ô balo không hợp lệ' });
+  }
+
+  // Decay energy first
+  await decayUserEnergy(userId);
+
+  // Load user
+  const user = await getOne('SELECT backpack, energy FROM users WHERE id = ?', [userId]);
+  if (!user) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+
+  let backpack = parseJSON(user.backpack, [null, null]);
+  const item = backpack[slotIdx];
+
+  if (!item || item.quantity <= 0) {
+    return res.status(400).json({ error: 'Ô balo rỗng' });
+  }
+
+  // Check if item is edible/drinkable
+  const edibleItems = {
+    banh_mi: 2,
+    sandwich: 2,
+    milk: 1
+  };
+
+  const energyGain = edibleItems[item.item_id];
+  if (energyGain === undefined) {
+    return res.status(400).json({ error: 'Vật phẩm không thể ăn hoặc uống' });
+  }
+
+  const currentEnergy = user.energy !== null ? user.energy : 6;
+  if (currentEnergy >= 6) {
+    return res.status(400).json({ error: 'Năng lượng đã đầy (Tối đa 6)' });
+  }
+
+  // Deduct 1 item quantity
+  item.quantity -= 1;
+  if (item.quantity <= 0) {
+    backpack[slotIdx] = null;
+  }
+
+  // Increase energy (cap at 6)
+  const newEnergy = Math.min(6, currentEnergy + energyGain);
+
+  // Save changes
+  await runSql('UPDATE users SET backpack = ?, energy = ?, energy_updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
+    JSON.stringify(backpack),
+    newEnergy,
+    userId
+  ]);
+
+  // Log activity
+  try {
+    const verb = item.item_id === 'milk' ? 'Uống' : 'Ăn';
+    const itemName = item.item_id === 'milk' ? 'sữa' : (item.item_id === 'banh_mi' ? 'bánh mì dài' : 'sandwich');
+    await logActivity(req.user.username, 'consume_item', `${verb} 1 ${itemName} (+${energyGain} năng lượng)`);
+  } catch(e) {}
+
+  res.json({
+    message: 'Sử dụng vật phẩm thành công',
+    backpack,
+    energy: newEnergy
   });
 });
 
