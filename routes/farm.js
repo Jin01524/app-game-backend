@@ -116,11 +116,16 @@ router.get('/', requireAuth, async (req, res) => {
 // ── POST /api/farm/buy ───────────────────────────────────────────────────────
 router.post('/buy', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = await getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
-  
+  // JOIN users + user_farms trong một round-trip
+  const row = await getOne(
+    'SELECT u.xu, f.level FROM users u LEFT JOIN user_farms f ON f.user_id = u.id WHERE u.id = ?',
+    [userId]
+  );
+  const user = row;
+  const farm = row;
+
   if (farm && farm.level > 0) return res.status(400).json({ error: 'Đã sở hữu ruộng' });
-  if (user.xu < 100) return res.status(400).json({ error: 'Không đủ xu (Cần 100 xu)' });
+  if (!user || user.xu < 100) return res.status(400).json({ error: 'Không đủ xu (Cần 100 xu)' });
   
   await runSql('UPDATE users SET xu = xu - 100 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET level = 1, state = 'idle' WHERE user_id = ?", [userId]);
@@ -139,9 +144,13 @@ router.post('/buy', requireAuth, async (req, res) => {
 // ── POST /api/farm/upgrade ───────────────────────────────────────────────────
 router.post('/upgrade', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = await getOne('SELECT level FROM user_farms WHERE user_id = ?', [userId]);
-  
+  const row = await getOne(
+    'SELECT u.xu, f.level FROM users u LEFT JOIN user_farms f ON f.user_id = u.id WHERE u.id = ?',
+    [userId]
+  );
+  const user = row;
+  const farm = row;
+
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Chưa sở hữu ruộng' });
   if (farm.level >= 50) return res.status(400).json({ error: 'Ruộng đã đạt cấp tối đa' });
   
@@ -162,12 +171,16 @@ router.post('/upgrade', requireAuth, async (req, res) => {
 // ── POST /api/farm/plant ─────────────────────────────────────────────────────
 router.post('/plant', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const user = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-  const farm = await getOne('SELECT level, state FROM user_farms WHERE user_id = ?', [userId]);
-  
+  const row = await getOne(
+    'SELECT u.xu, f.level, f.state FROM users u LEFT JOIN user_farms f ON f.user_id = u.id WHERE u.id = ?',
+    [userId]
+  );
+  const user = row;
+  const farm = row;
+
   if (!farm || farm.level < 1) return res.status(400).json({ error: 'Chưa sở hữu ruộng' });
   if (farm.state !== 'idle') return res.status(400).json({ error: 'Ruộng đang không trống' });
-  if (user.xu < 10) return res.status(400).json({ error: 'Không đủ xu gieo hạt (Cần 10 xu)' });
+  if (!user || user.xu < 10) return res.status(400).json({ error: 'Không đủ xu gieo hạt (Cần 10 xu)' });
   
   await runSql('UPDATE users SET xu = xu - 10 WHERE id = ?', [userId]);
   await runSql("UPDATE user_farms SET state = 'growing', planted_at = CURRENT_TIMESTAMP WHERE user_id = ?", [userId]);
@@ -209,10 +222,11 @@ router.post('/harvest', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Balo đã đầy!' });
   }
   
-  await runSql("UPDATE users SET backpack = ? WHERE id = ?", [JSON.stringify(addResult.backpack), userId]);
-  
-  // Reset farm state
-  await runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]);
+  // Gộp 2 UPDATE thành parallel execution
+  await Promise.all([
+    runSql("UPDATE users SET backpack = ? WHERE id = ?", [JSON.stringify(addResult.backpack), userId]),
+    runSql("UPDATE user_farms SET state = 'idle', planted_at = NULL WHERE user_id = ?", [userId]),
+  ]);
   
   // Log activity
   try {

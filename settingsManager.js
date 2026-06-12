@@ -27,6 +27,15 @@ async function loadSettings() {
     }
   });
   console.log('Settings loaded:', settingsCache);
+
+  // Auto-reload mỗi 10 phút để sync với thay đổi từ admin panel
+  if (!loadSettings._intervalSet) {
+    loadSettings._intervalSet = true;
+    setInterval(async () => {
+      const refreshed = await getAll('SELECT key, value FROM settings');
+      refreshed.forEach(row => { settingsCache[row.key] = row.value; });
+    }, 10 * 60 * 1000);
+  }
 }
 
 function getSetting(key, def) {

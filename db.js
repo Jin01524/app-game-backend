@@ -165,6 +165,15 @@ async function initDb() {
   // Ensure character_type column exists in existing database
   await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS character_type TEXT DEFAULT 'FrogNinja'`);
 
+  // ── Performance Indexes ─────────────────────────────────────────────────────
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_inventory_user_id   ON user_inventory(user_id)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_farms_user_id       ON user_farms(user_id)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_logs_created_at     ON activity_logs(created_at DESC)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_logs_username       ON activity_logs(username)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_messages_recipient  ON messages(recipient_id)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_group_members_uname ON group_members(username)`);
+
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
   await runSql(`INSERT INTO settings (key, value) VALUES ('goalWidth', '80') ON CONFLICT (key) DO NOTHING`);

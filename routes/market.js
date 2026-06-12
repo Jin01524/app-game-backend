@@ -7,25 +7,29 @@ const questManager = require('../questManager');
 
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// In-memory cache — giá chỉ đổi mỗi 6 tiếng, không cần query DB mỗi request
+let marketCache = null;
+let marketCacheTime = 0;
+
 // Helper to get or calculate current market state
 async function getMarketState() {
+  const now = Date.now();
+
+  // Trả về cache nếu còn hiệu lực
+  if (marketCache && now - marketCacheTime < UPDATE_INTERVAL_MS) {
+    return marketCache;
+  }
+
   let priceRow = await getOne("SELECT value FROM settings WHERE key = 'market_rice_price'");
   let lastUpdateRow = await getOne("SELECT value FROM settings WHERE key = 'market_last_update'");
 
   let price = priceRow ? parseInt(priceRow.value) : null;
   let lastUpdate = lastUpdateRow ? parseInt(lastUpdateRow.value) : null;
-  
-  const now = Date.now();
 
   // Initialize or Update price if it's been more than 6 hours
   if (!price || !lastUpdate || now - lastUpdate >= UPDATE_INTERVAL_MS) {
-    // Generate new price between 5 and 20
     price = Math.floor(Math.random() * (20 - 5 + 1)) + 5;
-    
-    // Calculate new base time (snap to exact 6 hour intervals to avoid drift, or just use now)
-    // Using `now` is simpler.
     lastUpdate = now;
-
     await runSql("INSERT INTO settings (key, value) VALUES ('market_rice_price', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [price.toString()]);
     await runSql("INSERT INTO settings (key, value) VALUES ('market_last_update', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [lastUpdate.toString()]);
   }
@@ -33,7 +37,11 @@ async function getMarketState() {
   const nextUpdate = lastUpdate + UPDATE_INTERVAL_MS;
   const timeRemainingMs = Math.max(0, nextUpdate - now);
 
-  return { price, nextUpdate, timeRemainingMs };
+  const result = { price, nextUpdate, timeRemainingMs };
+  // Lưu vào cache
+  marketCache = result;
+  marketCacheTime = now;
+  return result;
 }
 
 router.get('/', async (req, res) => {
@@ -49,6 +57,9 @@ router.post('/sell', async (req, res) => {
   if (!sellQty || sellQty <= 0) {
     return res.status(400).json({ error: 'Số lượng không hợp lệ' });
   }
+
+  // Lấy market state trước (đã cache, không query DB nếu còn hiệu lực)
+  const market = await getMarketState();
 
   // 1. Get warehouse storage quantity of lúa
   const storageItem = await getOne('SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, 'lua']);
@@ -70,18 +81,15 @@ router.post('/sell', async (req, res) => {
   let newStorageQty = storageQty;
   let newBackpack = [...backpack];
 
-  // Deduct from warehouse storage first
   if (newStorageQty > 0) {
     const deductFromStorage = Math.min(remainingToDeduct, newStorageQty);
     newStorageQty -= deductFromStorage;
     remainingToDeduct -= deductFromStorage;
   }
 
-  // Deduct remaining from backpack
   if (remainingToDeduct > 0) {
     const removeResult = removeFromBackpack(newBackpack, 'lua', remainingToDeduct);
     newBackpack = removeResult.backpack;
-    remainingToDeduct = 0; // completely deducted since totalQty >= sellQty
   }
 
   // 5. Update database - Warehouse storage
@@ -91,26 +99,19 @@ router.post('/sell', async (req, res) => {
     await runSql('UPDATE user_inventory SET quantity = ? WHERE user_id = ? AND item_id = ?', [newStorageQty, userId, 'lua']);
   }
 
-  // 6. Update database - Backpack
-  await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(newBackpack), userId]);
-
-  // 7. Add money and update quests
-  const market = await getMarketState();
+  // 6. Update database - Backpack & xu trong một lần UPDATE
   const totalEarned = sellQty * market.price;
-  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [totalEarned, userId]);
-  
+  await runSql('UPDATE users SET backpack = ?, xu = xu + ? WHERE id = ?', [JSON.stringify(newBackpack), totalEarned, userId]);
+
   // Log activity
   try {
     await logActivity(req.user.username, 'market_sell', `Bán ${sellQty} lúa với giá ${market.price} xu/lúa`, totalEarned);
   } catch (e) {}
 
-  // Get new user state
-  const updatedUser = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
-
   // Update quest progress for selling wheat
   await questManager.updateQuestProgress(userId, 'ban_lua', sellQty);
 
-  res.json({ success: true, earned: totalEarned, currentXu: updatedUser.xu });
+  res.json({ success: true, earned: totalEarned, currentXu: (user.xu ?? 0) + totalEarned });
 });
 
 router.post('/buy-animal', async (req, res) => {

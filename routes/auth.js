@@ -7,18 +7,25 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'te-lan-4.2-super-secret-key-2024';
 const JWT_EXPIRES_IN = '7d';
 
+const LAST_ONLINE_THROTTLE_MS = 5 * 60 * 1000; // 5 phút
+const lastOnlineMap = new Map(); // userId -> lastUpdateTimestamp
+
 // ── Shared middleware ────────────────────────────────────────────────────────
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Chưa đăng nhập' });
 
-  jwt.verify(token, JWT_SECRET, async (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
     req.user = user;
-    try {
-      await runSql('UPDATE users SET last_online = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-    } catch (e) {}
+    // Throttle last_online UPDATE: chỉ UPDATE nếu > 5 phút kể từ lần cuối
+    const now = Date.now();
+    const last = lastOnlineMap.get(user.id) || 0;
+    if (now - last > LAST_ONLINE_THROTTLE_MS) {
+      lastOnlineMap.set(user.id, now);
+      runSql('UPDATE users SET last_online = CURRENT_TIMESTAMP WHERE id = ?', [user.id]).catch(() => {});
+    }
     next();
   });
 }

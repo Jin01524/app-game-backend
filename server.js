@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { initDb } = require('./db');
+const { initDb, getOne, runSql } = require('./db');
 const http = require('http');
 const { Server } = require('socket.io');
 const { parseJSON, addToBackpack } = require('./utils');
@@ -13,6 +13,7 @@ const { setupSpySockets } = require('./spyManager');
 const { setupMessageSockets } = require('./messageManager');
 const { setupWerewolfSockets } = require('./werewolfManager');
 const { setupTravelSockets } = require('./travelManager');
+const { simulateCowProgress } = require('./cowSimulation');
 
 
 dotenv.config();
@@ -133,8 +134,18 @@ initDb().then(() => {
   app.use('/api/quests', authenticateToken, questRoutes);
   app.use('/api/messages', authenticateToken, messageRoutes);
 
-  // Gold Price Scraper Endpoint
+  // Gold Price Scraper Endpoint — cache 30 phút để tránh scrape mỗi request
+  let goldCache = null;
+  let goldCacheTime = 0;
+  const GOLD_CACHE_TTL = 30 * 60 * 1000; // 30 phút
+
   app.get('/api/gold', authenticateToken, (req, res) => {
+    const now = Date.now();
+    // Trả về cache nếu còn hiệu lực
+    if (goldCache && now - goldCacheTime < GOLD_CACHE_TTL) {
+      return res.json(goldCache);
+    }
+
     const https = require('https');
     const options = {
       hostname: 'giavang.org',
@@ -152,9 +163,7 @@ initDb().then(() => {
 
     const request = https.get(options, (proxyRes) => {
       let html = '';
-      proxyRes.on('data', (chunk) => {
-        html += chunk;
-      });
+      proxyRes.on('data', (chunk) => { html += chunk; });
       
       proxyRes.on('end', () => {
         try {
@@ -191,12 +200,11 @@ initDb().then(() => {
             }
           }
           
-          res.json({
-            success: true,
-            updateTime,
-            sjcMieng,
-            sjcNhan
-          });
+          const result = { success: true, updateTime, sjcMieng, sjcNhan };
+          // Lưu vào cache
+          goldCache = result;
+          goldCacheTime = Date.now();
+          res.json(result);
         } catch (e) {
           res.json({
             success: false,
@@ -209,7 +217,7 @@ initDb().then(() => {
       });
     });
 
-    request.on('error', (err) => {
+    request.on('error', () => {
       res.json({
         success: false,
         error: 'Lỗi kết nối máy chủ',
@@ -299,7 +307,6 @@ initDb().then(() => {
           const dropIndex = room.drops.findIndex(d => d.id === dropId);
           if (dropIndex !== -1) {
             const drop = room.drops[dropIndex];
-            const { getOne, runSql } = require('./db');
             const user = await getOne('SELECT id, backpack FROM users WHERE username = ?', [socket.playerUsername]);
             if (user) {
                let backpack = parseJSON(user.backpack, [null, null]);
@@ -330,12 +337,16 @@ initDb().then(() => {
   });
 
   // Periodically check for milk drops (every 10s)
+  // Chỉ xử lý rooms đang có player để tránh query DB không cần thiết
   setInterval(async () => {
-    const { getOne, runSql } = require('./db');
-    const { simulateCowProgress } = require('./cowSimulation');
     const now = Date.now();
     for (const hostUsername in houseRooms) {
-      if (!houseRooms[hostUsername].drops) houseRooms[hostUsername].drops = [];
+      const room = houseRooms[hostUsername];
+      // Bỏ qua phòng rỗng (chỉ có key 'drops', không có player socket)
+      const playerCount = Object.keys(room).filter(k => k !== 'drops').length;
+      if (playerCount === 0) continue;
+
+      if (!room.drops) room.drops = [];
       const user = await getOne('SELECT id FROM users WHERE username = ?', [hostUsername]);
       if (!user) continue;
       
@@ -349,7 +360,6 @@ initDb().then(() => {
       const simulation = simulateCowProgress(animalsData, cageInventory, now);
       
       if (simulation.updated) {
-        // Handle new drops
         if (simulation.drops.length > 0) {
           simulation.drops.forEach((dropType) => {
             cageProducts.push(dropType);
