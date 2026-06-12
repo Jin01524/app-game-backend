@@ -98,8 +98,21 @@ router.post('/game/score', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
   }
 
+  const userId = req.user.id;
+  await decayUserEnergy(userId);
+
+  const user = await getOne('SELECT energy, xu FROM users WHERE id = ?', [userId]);
+  if (!user) {
+    return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+  }
+
+  const currentEnergy = user.energy !== null ? user.energy : 6;
+  if (currentEnergy <= 0) {
+    return res.status(400).json({ error: 'Hết năng lượng, không thể chơi mini game!' });
+  }
+
   const xuEarned = goals * 2;
-  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [xuEarned, req.user.id]);
+  await runSql('UPDATE users SET xu = xu + ? WHERE id = ?', [xuEarned, userId]);
   
   // Log activity
   try {
@@ -107,10 +120,41 @@ router.post('/game/score', requireAuth, async (req, res) => {
   } catch (e) {}
   
   // Update quest progress for sút bóng
-  await questManager.updateQuestProgress(req.user.id, 'sut_bong', xuEarned);
+  await questManager.updateQuestProgress(userId, 'sut_bong', xuEarned);
 
-  const user = await getOne('SELECT xu FROM users WHERE id = ?', [req.user.id]);
-  res.json({ message: 'OK', xu: user.xu, earned: xuEarned });
+  const updatedUser = await getOne('SELECT xu FROM users WHERE id = ?', [userId]);
+  res.json({ message: 'OK', xu: updatedUser.xu, earned: xuEarned });
+});
+
+/**
+ * POST /api/profile/drain-energy
+ * Deducts 1 energy from the user due to continuous movement.
+ */
+router.post('/drain-energy', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+
+  // Decay energy first
+  await decayUserEnergy(userId);
+
+  // Load user
+  const user = await getOne('SELECT energy FROM users WHERE id = ?', [userId]);
+  if (!user) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+
+  const currentEnergy = user.energy !== null ? user.energy : 6;
+  let newEnergy = currentEnergy;
+
+  if (currentEnergy > 0) {
+    newEnergy = currentEnergy - 1;
+    await runSql('UPDATE users SET energy = ?, energy_updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
+      newEnergy,
+      userId
+    ]);
+  }
+
+  res.json({
+    message: 'Trừ năng lượng thành công',
+    energy: newEnergy
+  });
 });
 
 /**
