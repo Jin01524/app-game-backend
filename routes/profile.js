@@ -796,7 +796,8 @@ router.post('/consume', requireAuth, async (req, res) => {
   const edibleItems = {
     banh_mi: 2,
     sandwich: 2,
-    milk: 1
+    milk: 1,
+    cheese: 1
   };
 
   const energyGain = edibleItems[item.item_id];
@@ -828,7 +829,13 @@ router.post('/consume', requireAuth, async (req, res) => {
   // Log activity
   try {
     const verb = item.item_id === 'milk' ? 'Uống' : 'Ăn';
-    const itemName = item.item_id === 'milk' ? 'sữa' : (item.item_id === 'banh_mi' ? 'bánh mì dài' : 'sandwich');
+    const itemName = item.item_id === 'milk'
+      ? 'sữa'
+      : (item.item_id === 'banh_mi'
+        ? 'bánh mì dài'
+        : (item.item_id === 'sandwich'
+          ? 'sandwich'
+          : 'phô mai'));
     await logActivity(req.user.username, 'consume_item', `${verb} 1 ${itemName} (+${energyGain} năng lượng)`);
   } catch(e) {}
 
