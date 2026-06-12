@@ -509,12 +509,53 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/farm/craft ──────────────────────────────────────────────────────
+const RECIPES = {
+  cheese: {
+    name: 'Phô mai',
+    ingredient: 'milk',
+    requiredPerCraft: 3,
+    outputItem: 'cheese',
+    outputPerCraft: 1
+  },
+  bot_mi: {
+    name: 'Bột mì',
+    ingredient: 'lua',
+    requiredPerCraft: 10,
+    outputItem: 'bot_mi',
+    outputPerCraft: 2
+  },
+  banh_mi: {
+    name: 'Bánh mì dài',
+    ingredient: 'bot_mi',
+    requiredPerCraft: 1,
+    outputItem: 'banh_mi',
+    outputPerCraft: 2
+  },
+  sandwich: {
+    name: 'Sandwich',
+    ingredient: 'bot_mi',
+    requiredPerCraft: 1,
+    outputItem: 'sandwich',
+    outputPerCraft: 2
+  }
+};
+
 router.post('/craft', requireAuth, async (req, res) => {
   const userId = req.user.id;
-  const { target } = req.body; // 'backpack' or 'storage'
+  const { recipeId, quantity, target } = req.body; // 'backpack' or 'storage'
 
   if (target !== 'backpack' && target !== 'storage') {
     return res.status(400).json({ error: 'Mục tiêu cất giữ không hợp lệ' });
+  }
+
+  const craftQty = parseInt(quantity);
+  if (isNaN(craftQty) || craftQty <= 0) {
+    return res.status(400).json({ error: 'Số lượng chế tạo không hợp lệ' });
+  }
+
+  const recipe = RECIPES[recipeId];
+  if (!recipe) {
+    return res.status(400).json({ error: 'Công thức không hợp lệ' });
   }
 
   // Get user details
@@ -523,72 +564,78 @@ router.post('/craft', requireAuth, async (req, res) => {
 
   let backpack = parseJSON(user.backpack, [null, null]);
 
-  // Check milk quantity
-  const milkInBackpack = getBackpackItemCount(backpack, 'milk');
-  const milkInvRow = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'milk'", [userId]);
-  const milkInStorage = milkInvRow ? milkInvRow.quantity : 0;
-  const totalMilk = milkInBackpack + milkInStorage;
+  const ingredientId = recipe.ingredient;
+  const outputId = recipe.outputItem;
+  const totalIngredientNeeded = recipe.requiredPerCraft * craftQty;
+  const totalOutputGained = recipe.outputPerCraft * craftQty;
 
-  if (totalMilk < 3) {
-    return res.status(400).json({ error: 'Không đủ sữa bò! Cần 3 bình sữa để chế tạo phô mai.' });
+  // Check ingredient quantity
+  const ingredientInBackpack = getBackpackItemCount(backpack, ingredientId);
+  const ingredientInvRow = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?", [userId, ingredientId]);
+  const ingredientInStorage = ingredientInvRow ? ingredientInvRow.quantity : 0;
+  const totalIngredientOwned = ingredientInBackpack + ingredientInStorage;
+
+  if (totalIngredientOwned < totalIngredientNeeded) {
+    let ingName = ingredientId === 'lua' ? 'lúa' : ingredientId === 'milk' ? 'sữa bò' : 'bột mì';
+    return res.status(400).json({ error: `Không đủ nguyên liệu! Cần ${totalIngredientNeeded} ${ingName} để chế tạo.` });
   }
 
   // Check target space
   if (target === 'backpack') {
-    // Test if we can add cheese to backpack (backpack slot limit = 2)
+    // Test if backpack can hold the crafted items (backpack slots limit = 2)
     const testBackpack = [...backpack];
-    const addTest = addToBackpack(testBackpack, 'cheese', 1, 2);
+    const addTest = addToBackpack(testBackpack, outputId, totalOutputGained, 2);
     if (!addTest.success) {
-      return res.status(400).json({ error: 'Balo đã đầy, không thể chứa phô mai!' });
+      return res.status(400).json({ error: 'Balo đã đầy hoặc không đủ chỗ trống!' });
     }
   } else {
-    // Test if storage has space (default 5 slots or user.inventory_slots)
+    // Check storage limit
     const slots = user.inventory_slots || 5;
     const allItems = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
     let usedSlots = allItems.length;
-    const hasItem = allItems.some(i => i.item_id === 'cheese');
+    const hasItem = allItems.some(i => i.item_id === outputId);
     if (!hasItem && usedSlots >= slots) {
-      return res.status(400).json({ error: 'Kho chứa đã đầy, không thể chứa thêm phô mai!' });
+      return res.status(400).json({ error: 'Kho chứa đã đầy, không thể chứa thêm vật phẩm mới!' });
     }
   }
 
-  // Deduct 3 milk
-  let milkToDeduct = 3;
-  if (milkInBackpack > 0) {
-    const takeBp = Math.min(milkInBackpack, milkToDeduct);
-    backpack = removeFromBackpack(backpack, 'milk', takeBp).backpack;
-    milkToDeduct -= takeBp;
+  // Deduct ingredients
+  let remainingToDeduct = totalIngredientNeeded;
+  if (ingredientInBackpack > 0) {
+    const takeBp = Math.min(ingredientInBackpack, remainingToDeduct);
+    backpack = removeFromBackpack(backpack, ingredientId, takeBp).backpack;
+    remainingToDeduct -= takeBp;
   }
-  if (milkToDeduct > 0) {
-    await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [milkToDeduct, userId, 'milk']);
-    const checkMilk = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'milk'", [userId]);
-    if (checkMilk && checkMilk.quantity <= 0) {
-      await runSql("DELETE FROM user_inventory WHERE user_id = ? AND item_id = 'milk'", [userId]);
+  if (remainingToDeduct > 0) {
+    await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [remainingToDeduct, userId, ingredientId]);
+    const checkIngredient = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?", [userId, ingredientId]);
+    if (checkIngredient && checkIngredient.quantity <= 0) {
+      await runSql("DELETE FROM user_inventory WHERE user_id = ? AND item_id = ?", [userId, ingredientId]);
     }
   }
 
-  // Add 1 cheese
+  // Add outputs
   if (target === 'backpack') {
-    backpack = addToBackpack(backpack, 'cheese', 1, 2).backpack;
+    backpack = addToBackpack(backpack, outputId, totalOutputGained, 2).backpack;
     await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
   } else {
-    const cheeseInv = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'cheese'", [userId]);
-    if (cheeseInv) {
-      await runSql("UPDATE user_inventory SET quantity = quantity + 1 WHERE user_id = ? AND item_id = 'cheese'", [userId]);
+    const outputInv = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?", [userId, outputId]);
+    if (outputInv) {
+      await runSql("UPDATE user_inventory SET quantity = quantity + ? WHERE user_id = ? AND item_id = ?", [totalOutputGained, userId, outputId]);
     } else {
-      await runSql("INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, 'cheese', 1)", [userId]);
+      await runSql("INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, ?, ?)", [userId, outputId, totalOutputGained]);
     }
   }
 
   // Log activity
   try {
-    await logActivity(req.user.username, 'farming_craft', 'Chế tạo 1 phô mai từ 3 bình sữa');
+    await logActivity(req.user.username, 'farming_craft', `Chế tạo ${totalOutputGained} ${recipe.name} từ ${totalIngredientNeeded} nguyên liệu`);
   } catch (e) {}
 
   // Get new inventory
   const newInventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
 
-  res.json({ message: 'Chế tạo phô mai thành công!', backpack, inventory: newInventory });
+  res.json({ message: `Chế tạo ${recipe.name} thành công!`, backpack, inventory: newInventory });
 });
 
 module.exports = router;
