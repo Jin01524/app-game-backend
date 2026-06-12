@@ -138,7 +138,7 @@ router.post('/buy', requireAuth, async (req, res) => {
   // Update quest progress for buying land
   await questManager.updateQuestProgress(userId, 'mua_ruong', 1);
 
-  res.json({ message: 'Đã mua mảnh ruộng' });
+  res.json({ message: 'Đã mua mảnh ruộng', farm: { level: 1, state: 'idle', planted_at: null }, xu: user.xu - 100 });
 });
 
 // ── POST /api/farm/upgrade ───────────────────────────────────────────────────
@@ -165,7 +165,7 @@ router.post('/upgrade', requireAuth, async (req, res) => {
     await logActivity(req.user.username, 'farming_upgrade', `Nâng cấp ruộng lên Cấp ${farm.level + 1}`, -cost);
   } catch (e) {}
   
-  res.json({ message: 'Nâng cấp thành công' });
+  res.json({ message: 'Nâng cấp thành công', farm: { level: farm.level + 1 }, xu: user.xu - cost });
 });
 
 // ── POST /api/farm/plant ─────────────────────────────────────────────────────
@@ -193,7 +193,9 @@ router.post('/plant', requireAuth, async (req, res) => {
   // Update quest progress for planting (stage 1 of gieo_thu_hoach, cap at 1)
   await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 1);
 
-  res.json({ message: 'Đã gieo hạt' });
+  // Lấy planted_at vừa ghi để trả về cho frontend cập nhật countdown
+  const updatedFarm = await getOne("SELECT state, planted_at FROM user_farms WHERE user_id = ?", [userId]);
+  res.json({ message: 'Đã gieo hạt', farm: { state: 'growing', planted_at: updatedFarm ? updatedFarm.planted_at : new Date().toISOString() } });
 });
 
 // ── POST /api/farm/harvest ───────────────────────────────────────────────────
@@ -236,7 +238,7 @@ router.post('/harvest', requireAuth, async (req, res) => {
   // Update quest progress for harvesting (stage 2 of gieo_thu_hoach, cap at 2)
   await questManager.updateQuestProgress(userId, 'gieo_thu_hoach', 1, 2);
 
-  res.json({ message: `Thu hoạch thành công ${amount} lúa!` });
+  res.json({ message: `Thu hoạch thành công ${amount} lúa!`, backpack: addResult.backpack, farm: { state: 'idle', planted_at: null } });
 });
 
 // ── POST /api/farm/buy-slot ──────────────────────────────────────────────────
@@ -498,9 +500,9 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
   } catch (e) {}
 
   if (full) {
-    res.json({ message: `Balo đã đầy! Chỉ thu hoạch được một phần.`, counts });
+    res.json({ message: `Balo đã đầy! Chỉ thu hoạch được một phần.`, counts, backpack });
   } else {
-    res.json({ message: `Đã thu hoạch thành công các sản phẩm!`, counts });
+    res.json({ message: `Đã thu hoạch thành công các sản phẩm!`, counts, backpack });
   }
 });
 

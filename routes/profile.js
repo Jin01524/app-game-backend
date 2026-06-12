@@ -212,7 +212,8 @@ router.post('/transfer', requireAuth, async (req, res) => {
       await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [actualTaken, userId, itemId]);
     }
     
-    res.json({ message: `Đã chuyển ${actualTaken} vật phẩm vào balo`, backpack });
+    const newInventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    res.json({ message: `Đã chuyển ${actualTaken} vật phẩm vào balo`, backpack, inventory: newInventory });
   } else if (direction === 'to_storage') {
     // Count BEFORE removing (removeFromBackpack mutates the array in-place)
     const countBefore = backpack.reduce((sum, slot) => sum + (slot && slot.item_id === itemId ? slot.quantity : 0), 0);
@@ -241,7 +242,8 @@ router.post('/transfer', requireAuth, async (req, res) => {
       await runSql('INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, ?, ?)', [userId, itemId, actualRemoved]);
     }
     
-    res.json({ message: `Đã cất ${actualRemoved} vật phẩm vào kho`, backpack });
+    const newInventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    res.json({ message: `Đã cất ${actualRemoved} vật phẩm vào kho`, backpack, inventory: newInventory });
   } else {
     res.status(400).json({ error: 'Hành động không hợp lệ' });
   }
@@ -277,7 +279,8 @@ router.post('/discard', requireAuth, async (req, res) => {
     } else {
       await runSql('UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?', [takeAmount, userId, itemId]);
     }
-    res.json({ message: `Đã vứt ${takeAmount} vật phẩm` });
+    const newInventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    res.json({ message: `Đã vứt ${takeAmount} vật phẩm`, inventory: newInventory });
   } else {
     res.status(400).json({ error: 'Nguồn không hợp lệ' });
   }
