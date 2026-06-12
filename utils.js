@@ -6,7 +6,7 @@ function parseJSON(str, def) {
   }
 }
 
-function addToBackpack(backpack, itemId, qty, maxSlots = 2) {
+function addToBackpack(backpack, itemId, qty, maxSlots = 4) {
   // Enforce backpack length
   if (backpack.length !== maxSlots) {
     const newBackpack = [];
@@ -39,11 +39,11 @@ function addToBackpack(backpack, itemId, qty, maxSlots = 2) {
   return { success: remaining <= 0, backpack, remaining };
 }
 
-function removeFromBackpack(backpack, itemId, qty) {
-  // Enforce backpack length of 2
-  if (backpack.length !== 2) {
+function removeFromBackpack(backpack, itemId, qty, maxSlots = 4) {
+  // Enforce backpack length
+  if (backpack.length !== maxSlots) {
     const newBackpack = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < maxSlots; i++) {
       newBackpack.push(backpack[i] || null);
     }
     backpack = newBackpack;

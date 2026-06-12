@@ -69,7 +69,11 @@ router.post('/login', async (req, res) => {
       charBodyColor: user.char_body_color || '#3b82f6',
       charLegsColor: user.char_legs_color || '#1e293b',
       charShoeColor: user.char_shoe_color || '#000000',
-      backpack: JSON.parse(user.backpack || '[null, null]'),
+      backpack: (() => {
+        let bp = JSON.parse(user.backpack || '[null, null, null, null]');
+        while (bp.length < 4) bp.push(null);
+        return bp;
+      })(),
       characterType: user.character_type || 'FrogNinja',
       energy: user.energy ?? 6,
       vehicleSkins: JSON.parse(user.vehicle_skins || '["Motorcycle_orange"]'),
@@ -105,7 +109,11 @@ router.get('/me', authenticateToken, async (req, res) => {
     charBodyColor: user.char_body_color || '#3b82f6',
     charLegsColor: user.char_legs_color || '#1e293b',
     charShoeColor: user.char_shoe_color || '#000000',
-    backpack: JSON.parse(user.backpack || '[null, null]'),
+    backpack: (() => {
+      let bp = JSON.parse(user.backpack || '[null, null, null, null]');
+      while (bp.length < 4) bp.push(null);
+      return bp;
+    })(),
     inventory_slots: user.inventory_slots || 5,
     characterType: user.character_type || 'FrogNinja',
     energy: user.energy ?? 6,

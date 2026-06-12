@@ -570,7 +570,7 @@ router.post('/craft', requireAuth, async (req, res) => {
   const user = await getOne('SELECT backpack, inventory_slots, xu FROM users WHERE id = ?', [userId]);
   if (!user) return res.status(400).json({ error: 'Không tìm thấy người chơi' });
 
-  let backpack = parseJSON(user.backpack, [null, null]);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
 
   const ingredientId = recipe.ingredient;
   const outputId = recipe.outputItem;
@@ -590,9 +590,9 @@ router.post('/craft', requireAuth, async (req, res) => {
 
   // Check target space
   if (target === 'backpack') {
-    // Test if backpack can hold the crafted items (backpack slots limit = 2)
+    // Test if backpack can hold the crafted items (backpack slots limit = 4)
     const testBackpack = [...backpack];
-    const addTest = addToBackpack(testBackpack, outputId, totalOutputGained, 2);
+    const addTest = addToBackpack(testBackpack, outputId, totalOutputGained, 4);
     if (!addTest.success) {
       return res.status(400).json({ error: 'Balo đã đầy hoặc không đủ chỗ trống!' });
     }
@@ -624,7 +624,7 @@ router.post('/craft', requireAuth, async (req, res) => {
 
   // Add outputs
   if (target === 'backpack') {
-    backpack = addToBackpack(backpack, outputId, totalOutputGained, 2).backpack;
+    backpack = addToBackpack(backpack, outputId, totalOutputGained, 4).backpack;
     await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
   } else {
     const outputInv = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = ?", [userId, outputId]);

@@ -63,7 +63,7 @@ async function initDb() {
       char_body_color TEXT DEFAULT '#3b82f6',
       char_legs_color TEXT DEFAULT '#1e293b',
       char_shoe_color TEXT DEFAULT '#000000',
-      backpack TEXT DEFAULT '[null, null]',
+      backpack TEXT DEFAULT '[null, null, null, null]',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);

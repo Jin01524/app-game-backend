@@ -67,7 +67,7 @@ router.post('/sell', async (req, res) => {
 
   // 2. Get backpack quantity of lúa
   const user = await getOne('SELECT backpack, xu FROM users WHERE id = ?', [userId]);
-  const backpack = parseJSON(user.backpack, [null, null]);
+  const backpack = parseJSON(user.backpack, [null, null, null, null]);
   const backpackQty = getBackpackItemCount(backpack, 'lua');
 
   // 3. Check if total is sufficient
@@ -123,8 +123,8 @@ router.post('/buy-animal', async (req, res) => {
   const cowPrice = settingsManager.getSetting('market_cow_price', 200);
   if (user.xu < cowPrice) return res.status(400).json({ error: `Không đủ xu (Cần ${cowPrice} xu)` });
 
-  let backpack = parseJSON(user.backpack, [null, null]);
-  const result = addToBackpack(backpack, animal, 1, 2);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
+  const result = addToBackpack(backpack, animal, 1, 4);
   if (!result.success) {
     return res.status(400).json({ error: 'Balo đã đầy!' });
   }
@@ -156,8 +156,8 @@ router.post('/buy-item', async (req, res) => {
   const user = await getOne('SELECT xu, backpack FROM users WHERE id = ?', [userId]);
   if (user.xu < cost) return res.status(400).json({ error: `Không đủ xu (Cần ${cost} xu)` });
 
-  let backpack = parseJSON(user.backpack, [null, null]);
-  const result = addToBackpack(backpack, itemId, quantity, 2);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
+  const result = addToBackpack(backpack, itemId, quantity, 4);
   if (!result.success) {
     return res.status(400).json({ error: `Balo không đủ chỗ chứa ${quantity} vật phẩm này!` });
   }
