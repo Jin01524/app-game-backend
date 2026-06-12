@@ -293,6 +293,73 @@ router.post('/transfer', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/transfer-all-backpack', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const user = await getOne('SELECT backpack, inventory_slots FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy người chơi' });
+
+    let backpack = parseJSON(user.backpack, [null, null]);
+    const slots = user.inventory_slots || 5;
+
+    // Filter items to transfer
+    const itemsToTransfer = [];
+    backpack.forEach((slot, idx) => {
+      if (slot && slot.item_id && slot.quantity > 0) {
+        itemsToTransfer.push({ itemId: slot.item_id, quantity: slot.quantity, idx });
+      }
+    });
+
+    if (itemsToTransfer.length === 0) {
+      return res.status(400).json({ error: 'Không có vật phẩm nào trong tay để cất' });
+    }
+
+    // Load current inventory to check slots
+    const allItems = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    let usedSlots = allItems.length;
+
+    let transferredCount = 0;
+    for (const item of itemsToTransfer) {
+      const hasItem = allItems.some(i => i.item_id === item.itemId);
+      if (!hasItem && usedSlots >= slots) {
+        // Storage is full, skip this item
+        continue;
+      }
+
+      // Remove from backpack
+      const removeResult = removeFromBackpack(backpack, item.itemId, item.quantity);
+      backpack = removeResult.backpack;
+
+      // Add to database
+      const invItem = await getOne('SELECT id, quantity FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, item.itemId]);
+      if (invItem) {
+        await runSql('UPDATE user_inventory SET quantity = quantity + ? WHERE id = ?', [item.quantity, invItem.id]);
+      } else {
+        await runSql('INSERT INTO user_inventory (user_id, item_id, quantity) VALUES (?, ?, ?)', [userId, item.itemId, item.quantity]);
+        usedSlots++;
+      }
+      transferredCount++;
+    }
+
+    if (transferredCount === 0) {
+      return res.status(400).json({ error: 'Nhà kho đã đầy, không thể cất thêm vật phẩm nào' });
+    }
+
+    // Save changes
+    await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(backpack), userId]);
+
+    const newInventory = await getAll('SELECT item_id, quantity FROM user_inventory WHERE user_id = ?', [userId]);
+    res.json({
+      message: `Đã cất nhanh ${transferredCount} loại vật phẩm vào kho`,
+      backpack,
+      inventory: newInventory
+    });
+  } catch(e) {
+    console.error('transfer-all-backpack error:', e);
+    res.status(500).json({ error: 'Lỗi máy chủ khi cất nhanh' });
+  }
+});
+
 /**
  * POST /api/profile/discard
  * Body: { itemId: string, amount: number, source: 'backpack' | 'storage' }
