@@ -169,6 +169,12 @@ async function initDb() {
   await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS energy INTEGER DEFAULT 6`);
   await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS energy_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 
+  // Ensure vehicle_skins and equipped_vehicle_skin columns exist
+  await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS vehicle_skins TEXT DEFAULT '["Motorcycle_orange"]'`);
+  await runSql(`ALTER TABLE users ADD COLUMN IF NOT EXISTS equipped_vehicle_skin TEXT DEFAULT 'Motorcycle_orange'`);
+  await runSql(`UPDATE users SET vehicle_skins = '["Motorcycle_orange"]' WHERE vehicle_skins IS NULL`);
+  await runSql(`UPDATE users SET equipped_vehicle_skin = 'Motorcycle_orange' WHERE equipped_vehicle_skin IS NULL`);
+
   // ── Performance Indexes ─────────────────────────────────────────────────────
   await runSql(`CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_inventory_user_id   ON user_inventory(user_id)`);

@@ -72,6 +72,8 @@ router.post('/login', async (req, res) => {
       backpack: JSON.parse(user.backpack || '[null, null]'),
       characterType: user.character_type || 'FrogNinja',
       energy: user.energy ?? 6,
+      vehicleSkins: JSON.parse(user.vehicle_skins || '["Motorcycle_orange"]'),
+      equippedVehicleSkin: user.equipped_vehicle_skin || 'Motorcycle_orange',
     },
   });
 });
@@ -85,7 +87,7 @@ router.post('/logout', authenticateToken, (req, res) => {
 router.get('/me', authenticateToken, async (req, res) => {
   await decayUserEnergy(req.user.id);
   const user = await getOne(
-    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots, character_type, energy FROM users WHERE id = ?',
+    'SELECT id, username, display_name, avatar, role, xu, created_at, char_head_color, char_hair_color, char_body_color, char_legs_color, char_shoe_color, backpack, inventory_slots, character_type, energy, vehicle_skins, equipped_vehicle_skin FROM users WHERE id = ?',
     [req.user.id]
   );
   if (!user) return res.status(404).json({ error: 'Người dùng không tồn tại' });
@@ -107,6 +109,8 @@ router.get('/me', authenticateToken, async (req, res) => {
     inventory_slots: user.inventory_slots || 5,
     characterType: user.character_type || 'FrogNinja',
     energy: user.energy ?? 6,
+    vehicleSkins: JSON.parse(user.vehicle_skins || '["Motorcycle_orange"]'),
+    equippedVehicleSkin: user.equipped_vehicle_skin || 'Motorcycle_orange',
   });
 });
 

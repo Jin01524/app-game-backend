@@ -126,6 +126,7 @@ initDb().then(() => {
   const marketRoutes = require('./routes/market');
   const questRoutes = require('./routes/quests');
   const messageRoutes = require('./routes/messages');
+  const vehicleRoutes = require('./routes/vehicle');
 
   app.use('/api', authRoutes);
   app.use('/api/profile', authenticateToken, profileRoutes);
@@ -133,6 +134,7 @@ initDb().then(() => {
   app.use('/api/market', authenticateToken, marketRoutes);
   app.use('/api/quests', authenticateToken, questRoutes);
   app.use('/api/messages', authenticateToken, messageRoutes);
+  app.use('/api/vehicle', authenticateToken, vehicleRoutes);
 
   // Gold Price Scraper Endpoint — cache 30 phút để tránh scrape mỗi request
   let goldCache = null;
