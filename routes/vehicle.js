@@ -8,9 +8,9 @@ const VEHICLE_PRICES = {
   old_car_white: 1200,
   cheap_car_white: 1500,
   'cheap_car_Dark-Blue-Grey': 1600,
-  vf3_red: 2500,
-  vf3_blue: 2600,
-  vf3_yellow: 3000
+  vf3_red: 2000,
+  vf3_blue: 2000,
+  vf3_yellow: 2000
 };
 
 // POST /api/vehicle/buy
