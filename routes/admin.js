@@ -152,21 +152,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Configure multer storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../uploads/movies');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, 'cover-' + uniqueSuffix + ext);
-  }
-});
+// Configure multer storage in memory
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -182,14 +169,14 @@ const upload = multer({
   }
 });
 
-// POST /api/admin/movies/upload - Tải ảnh bìa lên
+// POST /api/admin/movies/upload - Tải ảnh bìa lên (Chuyển thành Base64 để lưu trữ vĩnh viễn trên Database)
 router.post('/movies/upload', upload.single('cover'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Không nhận được file tải lên' });
     }
-    const relativePath = `/uploads/movies/${req.file.filename}`;
-    res.json({ success: true, path: relativePath });
+    const base64Image = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    res.json({ success: true, path: base64Image });
   } catch (err) {
     console.error('Upload movie cover error:', err);
     res.status(500).json({ error: 'Lỗi tải tệp lên' });
