@@ -118,6 +118,7 @@ initDb().then(() => {
     });
   });
 
+  const path = require('path');
   const authRoutes = require('./routes/auth');
   const { authenticateToken } = authRoutes;
   const profileRoutes = require('./routes/profile');
@@ -127,7 +128,9 @@ initDb().then(() => {
   const questRoutes = require('./routes/quests');
   const messageRoutes = require('./routes/messages');
   const vehicleRoutes = require('./routes/vehicle');
+  const movieRoutes = require('./routes/movies');
 
+  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
   app.use('/api', authRoutes);
   app.use('/api/profile', authenticateToken, profileRoutes);
   app.use('/api/farm', authenticateToken, farmRoutes);
@@ -135,6 +138,7 @@ initDb().then(() => {
   app.use('/api/quests', authenticateToken, questRoutes);
   app.use('/api/messages', authenticateToken, messageRoutes);
   app.use('/api/vehicle', authenticateToken, vehicleRoutes);
+  app.use('/api/movies', authenticateToken, movieRoutes);
 
   // Gold Price Scraper Endpoint — cache 30 phút để tránh scrape mỗi request
   let goldCache = null;

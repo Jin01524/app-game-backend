@@ -175,6 +175,35 @@ async function initDb() {
   await runSql(`UPDATE users SET vehicle_skins = '["Motorcycle_orange"]' WHERE vehicle_skins IS NULL`);
   await runSql(`UPDATE users SET equipped_vehicle_skin = 'Motorcycle_orange' WHERE equipped_vehicle_skin IS NULL`);
 
+  // Ensure movies and watch logs tables exist
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS movies (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      cover_url TEXT,
+      tags TEXT,
+      country TEXT,
+      genre TEXT,
+      parts TEXT DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS movie_watch_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+      part_index INTEGER NOT NULL,
+      episode_index INTEGER NOT NULL,
+      watched_seconds INTEGER DEFAULT 0,
+      last_position_seconds INTEGER DEFAULT 0,
+      last_watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, movie_id, part_index, episode_index)
+    )
+  `);
+
   // ── Performance Indexes ─────────────────────────────────────────────────────
   await runSql(`CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_inventory_user_id   ON user_inventory(user_id)`);
