@@ -10,8 +10,9 @@ router.get('/', async (req, res) => {
     res.json(movies.map(m => {
       let partsCount = 0;
       let episodesCount = 0;
+      let partsArr = [];
       try {
-        const partsArr = JSON.parse(m.parts || '[]');
+        partsArr = JSON.parse(m.parts || '[]');
         partsCount = partsArr.length;
         episodesCount = partsArr.reduce((sum, p) => sum + (p.episodes ? p.episodes.length : 0), 0);
       } catch (e) {}
@@ -25,6 +26,7 @@ router.get('/', async (req, res) => {
         genre: m.genre,
         partsCount,
         episodesCount,
+        parts: partsArr,
         createdAt: m.created_at
       };
     }));
