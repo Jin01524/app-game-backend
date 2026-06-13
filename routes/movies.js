@@ -3,10 +3,24 @@ const router = express.Router();
 const { getOne, getAll, runSql } = require('../db');
 
 // GET /api/movies
-// Lấy danh sách phim kèm theo tổng số phần (parts) và lượt xem ước tính
+// Lấy danh sách phim kèm theo tổng số phần (parts), lượt xem và lịch sử xem của user hiện tại
 router.get('/', async (req, res) => {
+  const userId = req.user.id;
   try {
     const movies = await getAll('SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies ORDER BY id DESC');
+    
+    // Lấy tất cả logs xem của user này
+    const logs = await getAll('SELECT movie_id, part_index, episode_index, watched_seconds, last_position_seconds, last_watched_at FROM movie_watch_logs WHERE user_id = ?', [userId]);
+    
+    // Group logs by movie_id
+    const logsByMovie = {};
+    logs.forEach(l => {
+      if (!logsByMovie[l.movie_id]) {
+        logsByMovie[l.movie_id] = [];
+      }
+      logsByMovie[l.movie_id].push(l);
+    });
+
     res.json(movies.map(m => {
       let partsCount = 0;
       let episodesCount = 0;
@@ -16,6 +30,38 @@ router.get('/', async (req, res) => {
         partsCount = partsArr.length;
         episodesCount = partsArr.reduce((sum, p) => sum + (p.episodes ? p.episodes.length : 0), 0);
       } catch (e) {}
+
+      // Tính toán watch progress cho phim này
+      const movieLogs = logsByMovie[m.id] || [];
+      let lastWatchedAt = null;
+      let totalWatchedSeconds = 0;
+      let lastWatchedPartIndex = 0;
+      let lastWatchedEpisodeIndex = 0;
+      let lastWatchedEpisodeTitle = '';
+      
+      if (movieLogs.length > 0) {
+        // Tìm log mới nhất
+        let latestLog = movieLogs[0];
+        movieLogs.forEach(l => {
+          totalWatchedSeconds += (l.watched_seconds || 0);
+          if (new Date(l.last_watched_at) > new Date(latestLog.last_watched_at)) {
+            latestLog = l;
+          }
+        });
+        
+        lastWatchedAt = latestLog.last_watched_at;
+        lastWatchedPartIndex = latestLog.part_index;
+        lastWatchedEpisodeIndex = latestLog.episode_index;
+        
+        // Lấy tên tập phim đang xem dở
+        try {
+          const part = partsArr[lastWatchedPartIndex];
+          if (part && part.episodes && part.episodes[lastWatchedEpisodeIndex]) {
+            lastWatchedEpisodeTitle = part.episodes[lastWatchedEpisodeIndex].title;
+          }
+        } catch(e) {}
+      }
+
       return {
         id: m.id,
         title: m.title,
@@ -27,7 +73,14 @@ router.get('/', async (req, res) => {
         partsCount,
         episodesCount,
         parts: partsArr,
-        createdAt: m.created_at
+        createdAt: m.created_at,
+        watchProgress: movieLogs.length > 0 ? {
+          lastWatchedAt,
+          totalWatchedSeconds,
+          lastWatchedPartIndex,
+          lastWatchedEpisodeIndex,
+          lastWatchedEpisodeTitle
+        } : null
       };
     }));
   } catch (err) {
