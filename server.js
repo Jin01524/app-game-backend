@@ -266,8 +266,8 @@ initDb().then(() => {
 
     if (photosCache.has(url)) {
       const cached = photosCache.get(url);
-      // TTL 24 giờ — Google CDN URLs thường có hiệu lực vài ngày
-      if (Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
+      const ttl = cached.isFallback ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      if (Date.now() - cached.timestamp < ttl) {
         return res.json({ videoUrl: cached.videoUrl });
       }
     }
@@ -281,11 +281,31 @@ initDb().then(() => {
           return res.status(404).json({ error: 'No streamable videos found in this Google Photos link. Ensure the link is shared publicly.' });
         }
 
-        const streamUrl = videos[0].videoUrl;
+        const baseUrl = videos[0].baseUrl;
+        let streamUrl = videos[0].videoUrl; // defaults to =m22
+        let isFallback = false;
+
+        // Kiểm tra xem luồng chất lượng cao =m22 đã được sinh ra chưa (đặc biệt với phim mới thêm)
+        try {
+          const checkRes = await axios.head(`${baseUrl}=m22`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+            timeout: 1500
+          });
+          if (checkRes.status !== 200 && checkRes.status !== 206) {
+            streamUrl = `${baseUrl}=m18`;
+            isFallback = true;
+            console.log(`[photos-url] =m22 status ${checkRes.status} is not 200/206. Falling back to =m18`);
+          }
+        } catch (e) {
+          streamUrl = `${baseUrl}=m18`;
+          isFallback = true;
+          console.log(`[photos-url] =m22 check failed (likely 404/not processed yet): ${e.message}. Falling back to =m18`);
+        }
 
         photosCache.set(url, {
           videoUrl: streamUrl,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          isFallback
         });
 
         res.json({ videoUrl: streamUrl });
