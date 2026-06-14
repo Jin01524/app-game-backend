@@ -119,7 +119,7 @@ initDb().then(() => {
   });
 
   // Google Photos Resolver Endpoint (Public/Unauthenticated for robust player range requests & diagnostics)
-  const { extractAlbum } = require('gphotos-scraper');
+  const axios = require('axios');
   const photosCache = new Map();
 
   function resolveShortUrl(url) {
@@ -133,6 +133,146 @@ initDb().then(() => {
         }
       }).on('error', reject);
     });
+  }
+
+  async function fetchGooglePhotosHtml(targetUrl) {
+    let finalUrl = targetUrl;
+    if (targetUrl.includes('photos.app.goo.gl')) {
+      try {
+        finalUrl = await resolveShortUrl(targetUrl);
+        console.log('[photos-url] Resolved short URL to:', finalUrl);
+      } catch (err) {
+        console.warn('[photos-url] Failed to resolve short URL, trying targetUrl directly:', err.message);
+      }
+    }
+
+    const fetchStrategies = [
+      {
+        name: 'api.cors.lol',
+        url: (target) => `https://api.cors.lol/?url=${encodeURIComponent(target)}`,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        },
+        timeout: 12000,
+        extractHtml: (res) => res.data
+      },
+      {
+        name: 'api.allorigins.win raw',
+        url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        },
+        timeout: 12000,
+        extractHtml: (res) => res.data
+      },
+      {
+        name: 'Direct Fetch',
+        url: (target) => target,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+          'Upgrade-Insecure-Requests': '1'
+        },
+        timeout: 10000,
+        extractHtml: (res) => res.data
+      }
+    ];
+
+    let lastError = null;
+    for (const strategy of fetchStrategies) {
+      const url = strategy.url(finalUrl);
+      console.log(`[photos-url] Attempting fetch via ${strategy.name}...`);
+      try {
+        const start = Date.now();
+        const res = await axios.get(url, {
+          headers: strategy.headers,
+          timeout: strategy.timeout
+        });
+        const html = strategy.extractHtml(res);
+        if (html && (html.includes('AF1Qip') || html.includes('lh3.googleusercontent.com'))) {
+          console.log(`[photos-url] Successfully fetched via ${strategy.name} in ${((Date.now() - start)/1000).toFixed(2)}s. HTML size: ${html.length} bytes`);
+          return html;
+        } else {
+          console.warn(`[photos-url] ${strategy.name} response did not contain Photos identifiers. HTML length: ${html ? html.length : 0}`);
+        }
+      } catch (err) {
+        console.warn(`[photos-url] ${strategy.name} failed: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    throw new Error(`Failed to fetch Google Photos HTML via all strategies. Last error: ${lastError ? lastError.message : 'Unknown'}`);
+  }
+
+  function extractVideosFromHtml(html) {
+    let videos = [];
+    
+    // Method 1: JSON Parsing of ds:1 callback (most precise, gives durations and identifies videos)
+    try {
+      const startKeyword = "AF_initDataCallback({key: 'ds:1'";
+      const startIdx = html.indexOf(startKeyword);
+      if (startIdx !== -1) {
+        const dataKeyword = "data:";
+        const dataIdx = html.indexOf(dataKeyword, startIdx);
+        if (dataIdx !== -1) {
+          const sideChannelKeyword = ", sideChannel:";
+          let endIdx = html.indexOf(sideChannelKeyword, dataIdx);
+          if (endIdx === -1) {
+            endIdx = html.indexOf("});", dataIdx);
+          }
+          if (endIdx !== -1) {
+            const dataStr = html.substring(dataIdx + dataKeyword.length, endIdx).trim();
+            const data = JSON.parse(dataStr);
+            const items = data[1] || [];
+            
+            for (const item of items) {
+              const id = item[0];
+              const itemInfo = item[1];
+              const metadata = item[9];
+              if (metadata && metadata['76647426']) {
+                const baseUrl = itemInfo[0];
+                const durationMs = metadata['76647426'][0];
+                videos.push({
+                  id,
+                  baseUrl,
+                  videoUrl: `${baseUrl}=m22`,
+                  durationMs,
+                  method: 'json_ds1'
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[photos-url-parser] Method 1 (JSON) failed:', err.message);
+    }
+    
+    // Method 2: Regex fallback - if no videos found via JSON, find googleusercontent media URLs
+    if (videos.length === 0) {
+      try {
+        console.log('[photos-url-parser] Falling back to regex extraction...');
+        const guRegex = /(https:\/\/lh3\.googleusercontent\.com\/pw\/[a-zA-Z0-9_-]+)/g;
+        const matches = html.match(guRegex);
+        if (matches && matches.length > 0) {
+          const uniqueUrls = [...new Set(matches)];
+          uniqueUrls.forEach((url, idx) => {
+            videos.push({
+              id: `regex_match_${idx}`,
+              baseUrl: url,
+              videoUrl: `${url}=m22`,
+              durationMs: 0,
+              method: 'regex_pw'
+            });
+          });
+        }
+      } catch (err) {
+        console.error('[photos-url-parser] Method 2 (Regex) failed:', err.message);
+      }
+    }
+    
+    return videos;
   }
 
   app.get('/api/movies/photos-url', (req, res) => {
@@ -150,23 +290,14 @@ initDb().then(() => {
 
     const resolveAndExtract = async () => {
       try {
-        let finalUrl = url;
-        if (url.includes('photos.app.goo.gl')) {
-          finalUrl = await resolveShortUrl(url);
-        }
-
-        const album = await extractAlbum(finalUrl);
-        if (!album || !album.photos) {
-          return res.status(404).json({ error: 'Album not found or empty' });
-        }
-
-        const videos = album.photos.filter(p => p.mimeType && p.mimeType.startsWith('video/'));
+        const html = await fetchGooglePhotosHtml(url);
+        const videos = extractVideosFromHtml(html);
+        
         if (videos.length === 0) {
-          return res.status(404).json({ error: 'No videos found in album' });
+          return res.status(404).json({ error: 'No streamable videos found in this Google Photos link. Ensure the link is shared publicly.' });
         }
 
-        const rawVideoUrl = videos[0].url;
-        const streamUrl = `${rawVideoUrl}=m22`;
+        const streamUrl = videos[0].videoUrl;
 
         photosCache.set(url, {
           videoUrl: streamUrl,
@@ -178,8 +309,7 @@ initDb().then(() => {
         console.error('Error resolving Google Photos URL:', err);
         res.status(500).json({ 
           error: 'Error resolving Google Photos URL',
-          detail: err.message,
-          stack: err.stack
+          detail: err.message
         });
       }
     };
