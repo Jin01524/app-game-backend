@@ -24,8 +24,8 @@ router.get('/', async (req, res) => {
       logsByMovie[l.movie_id].push(l);
     });
 
-    // Cache: danh sách phim ít thay đổi, cho phép browser cache 30 giây
-    res.setHeader('Cache-Control', 'private, max-age=30');
+    // Không lưu cache trình duyệt để đảm bảo thông tin cập nhật từ Admin hiển thị ngay lập tức
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     res.json(movies.map(m => {
       let partsCount = 0;
@@ -120,8 +120,8 @@ router.get('/:id', async (req, res) => {
       [userId, movieId]
     );
 
-    // Chi tiết phim ổn định, cho phép browser cache 60 giây
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    // Không lưu cache trình duyệt để đảm bảo thay đổi phản ánh ngay lập tức
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     res.json({
       id: movie.id,
