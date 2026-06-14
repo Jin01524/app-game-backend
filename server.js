@@ -156,7 +156,7 @@ initDb().then(() => {
           'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
           'Upgrade-Insecure-Requests': '1'
         },
-        timeout: 4000,
+        timeout: 3000,
         extractHtml: (res) => res.data
       },
       {
@@ -165,7 +165,7 @@ initDb().then(() => {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
         },
-        timeout: 5000,
+        timeout: 3000,
         extractHtml: (res) => res.data
       }
     ];
