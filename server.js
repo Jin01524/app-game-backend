@@ -148,24 +148,6 @@ initDb().then(() => {
 
     const fetchStrategies = [
       {
-        name: 'api.cors.lol',
-        url: (target) => `https://api.cors.lol/?url=${encodeURIComponent(target)}`,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-        },
-        timeout: 12000,
-        extractHtml: (res) => res.data
-      },
-      {
-        name: 'api.allorigins.win raw',
-        url: (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-        },
-        timeout: 12000,
-        extractHtml: (res) => res.data
-      },
-      {
         name: 'Direct Fetch',
         url: (target) => target,
         headers: {
@@ -174,7 +156,16 @@ initDb().then(() => {
           'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
           'Upgrade-Insecure-Requests': '1'
         },
-        timeout: 10000,
+        timeout: 4000,
+        extractHtml: (res) => res.data
+      },
+      {
+        name: 'api.cors.lol',
+        url: (target) => `https://api.cors.lol/?url=${encodeURIComponent(target)}`,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        },
+        timeout: 5000,
         extractHtml: (res) => res.data
       }
     ];
