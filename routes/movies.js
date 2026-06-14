@@ -170,4 +170,74 @@ router.post('/watch-time', async (req, res) => {
   }
 });
 
+// GET /api/movies/photos-url
+// Phân tích liên kết chia sẻ Google Photos và trả về link direct video (googleusercontent)
+const { extractAlbum } = require('gphotos-scraper');
+const https = require('https');
+
+// Helper to follow redirect for photos.app.goo.gl
+function resolveShortUrl(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        resolve(res.headers.location);
+      } else {
+        resolve(url);
+      }
+    }).on('error', reject);
+  });
+}
+
+// In-memory cache for Google Photos resolved URLs
+const photosCache = new Map();
+
+router.get('/photos-url', async (req, res) => {
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).json({ error: 'Thiếu tham số url' });
+  }
+
+  // Check cache (valid for 12 hours)
+  if (photosCache.has(url)) {
+    const cached = photosCache.get(url);
+    if (Date.now() - cached.timestamp < 12 * 60 * 60 * 1000) {
+      return res.json({ videoUrl: cached.videoUrl });
+    }
+  }
+
+  try {
+    let finalUrl = url;
+    if (url.includes('photos.app.goo.gl')) {
+      finalUrl = await resolveShortUrl(url);
+    }
+
+    const album = await extractAlbum(finalUrl);
+    if (!album || !album.photos) {
+      return res.status(404).json({ error: 'Không thể phân tích dữ liệu từ liên kết Google Photos này.' });
+    }
+
+    const videos = album.photos.filter(p => p.mimeType && p.mimeType.startsWith('video/'));
+    if (videos.length === 0) {
+      return res.status(404).json({ error: 'Không tìm thấy video nào trong liên kết Google Photos này.' });
+    }
+
+    // Lấy video đầu tiên trong album
+    const rawVideoUrl = videos[0].url;
+    // Sử dụng chất lượng m22 (720p) làm mặc định để tải nhanh và mượt mà.
+    const streamUrl = `${rawVideoUrl}=m22`;
+
+    // Lưu cache
+    photosCache.set(url, {
+      videoUrl: streamUrl,
+      timestamp: Date.now()
+    });
+
+    res.json({ videoUrl: streamUrl });
+  } catch (err) {
+    console.error('Error resolving Google Photos URL:', err);
+    res.status(500).json({ error: 'Lỗi phân tích Google Photos. Vui lòng đảm bảo liên kết chia sẻ công khai.' });
+  }
+});
+
 module.exports = router;
+
