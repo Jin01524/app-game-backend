@@ -3,64 +3,75 @@ const router = express.Router();
 const { getOne, getAll, runSql } = require('../db');
 
 // GET /api/movies
-// Lấy danh sách phim kèm theo tổng số phần (parts), lượt xem và lịch sử xem của user hiện tại
+// Lấy danh sách phim (không trả về parts URLs để giảm payload)
 router.get('/', async (req, res) => {
   const userId = req.user.id;
   try {
-    const movies = await getAll('SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies ORDER BY id DESC');
-    
-    // Lấy tất cả logs xem của user này
-    const logs = await getAll('SELECT movie_id, part_index, episode_index, watched_seconds, last_position_seconds, last_watched_at FROM movie_watch_logs WHERE user_id = ?', [userId]);
-    
+    const movies = await getAll(
+      'SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies ORDER BY id DESC'
+    );
+
+    // Lấy tất cả logs xem của user này một lần duy nhất
+    const logs = await getAll(
+      'SELECT movie_id, part_index, episode_index, watched_seconds, last_position_seconds, last_watched_at FROM movie_watch_logs WHERE user_id = ?',
+      [userId]
+    );
+
     // Group logs by movie_id
     const logsByMovie = {};
     logs.forEach(l => {
-      if (!logsByMovie[l.movie_id]) {
-        logsByMovie[l.movie_id] = [];
-      }
+      if (!logsByMovie[l.movie_id]) logsByMovie[l.movie_id] = [];
       logsByMovie[l.movie_id].push(l);
     });
+
+    // Cache: danh sách phim ít thay đổi, cho phép browser cache 30 giây
+    res.setHeader('Cache-Control', 'private, max-age=30');
 
     res.json(movies.map(m => {
       let partsCount = 0;
       let episodesCount = 0;
       let partsArr = [];
+
       try {
         partsArr = JSON.parse(m.parts || '[]');
         partsCount = partsArr.length;
         episodesCount = partsArr.reduce((sum, p) => sum + (p.episodes ? p.episodes.length : 0), 0);
       } catch (e) {}
 
-      // Tính toán watch progress cho phim này
       const movieLogs = logsByMovie[m.id] || [];
-      let lastWatchedAt = null;
-      let totalWatchedSeconds = 0;
-      let lastWatchedPartIndex = 0;
-      let lastWatchedEpisodeIndex = 0;
-      let lastWatchedEpisodeTitle = '';
-      
-      if (movieLogs.length > 0) {
-        // Tìm log mới nhất
-        let latestLog = movieLogs[0];
-        movieLogs.forEach(l => {
-          totalWatchedSeconds += (l.watched_seconds || 0);
-          if (new Date(l.last_watched_at) > new Date(latestLog.last_watched_at)) {
-            latestLog = l;
-          }
-        });
-        
-        lastWatchedAt = latestLog.last_watched_at;
-        lastWatchedPartIndex = latestLog.part_index;
-        lastWatchedEpisodeIndex = latestLog.episode_index;
-        
-        // Lấy tên tập phim đang xem dở
-        try {
-          const part = partsArr[lastWatchedPartIndex];
-          if (part && part.episodes && part.episodes[lastWatchedEpisodeIndex]) {
-            lastWatchedEpisodeTitle = part.episodes[lastWatchedEpisodeIndex].title;
-          }
-        } catch(e) {}
+
+      if (movieLogs.length === 0) {
+        return {
+          id: m.id,
+          title: m.title,
+          description: m.description,
+          coverUrl: m.cover_url,
+          tags: m.tags,
+          country: m.country,
+          genre: m.genre,
+          partsCount,
+          episodesCount,
+          createdAt: m.created_at,
+          watchProgress: null
+        };
       }
+
+      let latestLog = movieLogs[0];
+      let totalWatchedSeconds = 0;
+      movieLogs.forEach(l => {
+        totalWatchedSeconds += (l.watched_seconds || 0);
+        if (new Date(l.last_watched_at) > new Date(latestLog.last_watched_at)) {
+          latestLog = l;
+        }
+      });
+
+      let lastWatchedEpisodeTitle = '';
+      try {
+        const part = partsArr[latestLog.part_index];
+        if (part && part.episodes && part.episodes[latestLog.episode_index]) {
+          lastWatchedEpisodeTitle = part.episodes[latestLog.episode_index].title;
+        }
+      } catch(e) {}
 
       return {
         id: m.id,
@@ -72,15 +83,14 @@ router.get('/', async (req, res) => {
         genre: m.genre,
         partsCount,
         episodesCount,
-        parts: partsArr,
         createdAt: m.created_at,
-        watchProgress: movieLogs.length > 0 ? {
-          lastWatchedAt,
+        watchProgress: {
+          lastWatchedAt: latestLog.last_watched_at,
           totalWatchedSeconds,
-          lastWatchedPartIndex,
-          lastWatchedEpisodeIndex,
+          lastWatchedPartIndex: latestLog.part_index,
+          lastWatchedEpisodeIndex: latestLog.episode_index,
           lastWatchedEpisodeTitle
-        } : null
+        }
       };
     }));
   } catch (err) {
@@ -96,13 +106,22 @@ router.get('/:id', async (req, res) => {
   const movieId = req.params.id;
   const userId = req.user.id;
   try {
-    const movie = await getOne('SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies WHERE id = ?', [movieId]);
+    const movie = await getOne(
+      'SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies WHERE id = ?',
+      [movieId]
+    );
     if (!movie) {
       return res.status(404).json({ error: 'Không tìm thấy phim này' });
     }
 
-    // Lấy log xem dở của user này cho tất cả tập trong phim
-    const logs = await getAll('SELECT part_index, episode_index, watched_seconds, last_position_seconds FROM movie_watch_logs WHERE user_id = ? AND movie_id = ?', [userId, movieId]);
+    // Lấy log xem dở — được tăng tốc bởi composite index idx_watch_logs_user_movie
+    const logs = await getAll(
+      'SELECT part_index, episode_index, watched_seconds, last_position_seconds FROM movie_watch_logs WHERE user_id = ? AND movie_id = ?',
+      [userId, movieId]
+    );
+
+    // Chi tiết phim ổn định, cho phép browser cache 60 giây
+    res.setHeader('Cache-Control', 'private, max-age=60');
 
     res.json({
       id: movie.id,
@@ -128,7 +147,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/movies/watch-time
-// Cộng dồn thời lượng xem và lưu giây xem cuối cùng
+// UPSERT: cộng dồn thời lượng xem trong 1 round-trip DB thay vì SELECT + UPDATE/INSERT
 router.post('/watch-time', async (req, res) => {
   const userId = req.user.id;
   const { movieId, partIndex, episodeIndex, duration, lastPosition } = req.body;
@@ -145,24 +164,17 @@ router.post('/watch-time', async (req, res) => {
   }
 
   try {
-    // Thử cập nhật bản ghi cũ
-    const existing = await getOne(
-      'SELECT id, watched_seconds FROM movie_watch_logs WHERE user_id = ? AND movie_id = ? AND part_index = ? AND episode_index = ?',
-      [userId, movieId, partIndex, episodeIndex]
+    // Single UPSERT: INSERT hoặc cộng dồn watched_seconds nếu đã tồn tại
+    await runSql(
+      `INSERT INTO movie_watch_logs (user_id, movie_id, part_index, episode_index, watched_seconds, last_position_seconds, last_watched_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id, movie_id, part_index, episode_index)
+       DO UPDATE SET
+         watched_seconds = movie_watch_logs.watched_seconds + EXCLUDED.watched_seconds,
+         last_position_seconds = EXCLUDED.last_position_seconds,
+         last_watched_at = CURRENT_TIMESTAMP`,
+      [userId, movieId, partIndex, episodeIndex, durationSec, positionSec]
     );
-
-    if (existing) {
-      const newWatched = existing.watched_seconds + durationSec;
-      await runSql(
-        'UPDATE movie_watch_logs SET watched_seconds = ?, last_position_seconds = ?, last_watched_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [newWatched, positionSec, existing.id]
-      );
-    } else {
-      await runSql(
-        'INSERT INTO movie_watch_logs (user_id, movie_id, part_index, episode_index, watched_seconds, last_position_seconds) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, movieId, partIndex, episodeIndex, durationSec, positionSec]
-      );
-    }
 
     res.json({ success: true });
   } catch (err) {
@@ -172,4 +184,3 @@ router.post('/watch-time', async (req, res) => {
 });
 
 module.exports = router;
-

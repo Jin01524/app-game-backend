@@ -120,7 +120,8 @@ initDb().then(() => {
 
   // Google Photos Resolver Endpoint (Public/Unauthenticated for robust player range requests & diagnostics)
   const axios = require('axios');
-  const photosCache = new Map();
+  const photosCache = new Map();    // cache: URL → { videoUrl, timestamp }
+  const shortUrlCache = new Map();  // cache: short URL → resolved long URL (TTL 24h)
 
   function resolveShortUrl(url) {
     return new Promise((resolve, reject) => {
@@ -138,62 +139,53 @@ initDb().then(() => {
   async function fetchGooglePhotosHtml(targetUrl) {
     let finalUrl = targetUrl;
     if (targetUrl.includes('photos.app.goo.gl')) {
-      try {
-        finalUrl = await resolveShortUrl(targetUrl);
-        console.log('[photos-url] Resolved short URL to:', finalUrl);
-      } catch (err) {
-        console.warn('[photos-url] Failed to resolve short URL, trying targetUrl directly:', err.message);
+      // Kiểm tra cache trước — tránh HTTP round-trip không cần thiết
+      const cached = shortUrlCache.get(targetUrl);
+      if (cached && Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
+        finalUrl = cached.resolved;
+        console.log('[photos-url] Short URL resolved from cache:', finalUrl);
+      } else {
+        try {
+          finalUrl = await resolveShortUrl(targetUrl);
+          shortUrlCache.set(targetUrl, { resolved: finalUrl, timestamp: Date.now() });
+          console.log('[photos-url] Resolved short URL to:', finalUrl);
+        } catch (err) {
+          console.warn('[photos-url] Failed to resolve short URL, trying targetUrl directly:', err.message);
+        }
       }
     }
 
-    const fetchStrategies = [
-      {
-        name: 'Direct Fetch',
-        url: (target) => target,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    // Chạy song song 2 strategies, lấy kết quả từ bên nào phản hồi trước
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    const fetchStrategy = (name, url, headers) => axios.get(url, { headers, timeout: 3000 })
+      .then(res => {
+        const html = res.data;
+        if (html && (html.includes('AF1Qip') || html.includes('lh3.googleusercontent.com'))) {
+          return { name, html };
+        }
+        throw new Error(`${name}: response did not contain Photos identifiers (${html ? html.length : 0} bytes)`);
+      });
+
+    const start = Date.now();
+    try {
+      const result = await Promise.any([
+        fetchStrategy('Direct Fetch', finalUrl, {
+          'User-Agent': UA,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
           'Upgrade-Insecure-Requests': '1'
-        },
-        timeout: 3000,
-        extractHtml: (res) => res.data
-      },
-      {
-        name: 'api.cors.lol',
-        url: (target) => `https://api.cors.lol/?url=${encodeURIComponent(target)}`,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-        },
-        timeout: 3000,
-        extractHtml: (res) => res.data
-      }
-    ];
-
-    let lastError = null;
-    for (const strategy of fetchStrategies) {
-      const url = strategy.url(finalUrl);
-      console.log(`[photos-url] Attempting fetch via ${strategy.name}...`);
-      try {
-        const start = Date.now();
-        const res = await axios.get(url, {
-          headers: strategy.headers,
-          timeout: strategy.timeout
-        });
-        const html = strategy.extractHtml(res);
-        if (html && (html.includes('AF1Qip') || html.includes('lh3.googleusercontent.com'))) {
-          console.log(`[photos-url] Successfully fetched via ${strategy.name} in ${((Date.now() - start)/1000).toFixed(2)}s. HTML size: ${html.length} bytes`);
-          return html;
-        } else {
-          console.warn(`[photos-url] ${strategy.name} response did not contain Photos identifiers. HTML length: ${html ? html.length : 0}`);
-        }
-      } catch (err) {
-        console.warn(`[photos-url] ${strategy.name} failed: ${err.message}`);
-        lastError = err;
-      }
+        }),
+        fetchStrategy('api.cors.lol', `https://api.cors.lol/?url=${encodeURIComponent(finalUrl)}`, {
+          'User-Agent': UA
+        })
+      ]);
+      console.log(`[photos-url] Resolved via ${result.name} in ${((Date.now() - start)/1000).toFixed(2)}s`);
+      return result.html;
+    } catch (aggregateErr) {
+      const errors = aggregateErr.errors ? aggregateErr.errors.map(e => e.message).join(' | ') : aggregateErr.message;
+      throw new Error(`All fetch strategies failed: ${errors}`);
     }
-
-    throw new Error(`Failed to fetch Google Photos HTML via all strategies. Last error: ${lastError ? lastError.message : 'Unknown'}`);
   }
 
   function extractVideosFromHtml(html) {
@@ -274,7 +266,8 @@ initDb().then(() => {
 
     if (photosCache.has(url)) {
       const cached = photosCache.get(url);
-      if (Date.now() - cached.timestamp < 12 * 60 * 60 * 1000) {
+      // TTL 24 giờ — Google CDN URLs thường có hiệu lực vài ngày
+      if (Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
         return res.json({ videoUrl: cached.videoUrl });
       }
     }

@@ -212,6 +212,7 @@ async function initDb() {
   await runSql(`CREATE INDEX IF NOT EXISTS idx_logs_username       ON activity_logs(username)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_messages_recipient  ON messages(recipient_id)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_group_members_uname ON group_members(username)`);
+  await runSql(`CREATE INDEX IF NOT EXISTS idx_watch_logs_user_movie ON movie_watch_logs(user_id, movie_id)`);
 
   // Default settings
   await runSql(`INSERT INTO settings (key, value) VALUES ('gkBaseSpeed', '1.2') ON CONFLICT (key) DO NOTHING`);
