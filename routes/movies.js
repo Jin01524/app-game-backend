@@ -154,7 +154,11 @@ router.get('/photos-url', async (req, res) => {
     res.json({ videoUrl: streamUrl });
   } catch (err) {
     console.error('Error resolving Google Photos URL:', err);
-    res.status(500).json({ error: 'Lỗi phân tích Google Photos. Vui lòng đảm bảo liên kết chia sẻ công khai.' });
+    res.status(500).json({ 
+      error: 'Lỗi phân tích Google Photos. Vui lòng đảm bảo liên kết chia sẻ công khai.',
+      detail: err.message,
+      stack: err.stack
+    });
   }
 });
 
