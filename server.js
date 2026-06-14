@@ -118,6 +118,74 @@ initDb().then(() => {
     });
   });
 
+  // Google Photos Resolver Endpoint (Public/Unauthenticated for robust player range requests & diagnostics)
+  const { extractAlbum } = require('gphotos-scraper');
+  const photosCache = new Map();
+
+  function resolveShortUrl(url) {
+    return new Promise((resolve, reject) => {
+      https.get(url, (res) => {
+        res.resume(); // Drain stream to avoid memory/socket leak
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          resolve(res.headers.location);
+        } else {
+          resolve(url);
+        }
+      }).on('error', reject);
+    });
+  }
+
+  app.get('/api/movies/photos-url', (req, res) => {
+    const { url } = req.query;
+    if (!url) {
+      return res.status(400).json({ error: 'Missing url parameter' });
+    }
+
+    if (photosCache.has(url)) {
+      const cached = photosCache.get(url);
+      if (Date.now() - cached.timestamp < 12 * 60 * 60 * 1000) {
+        return res.json({ videoUrl: cached.videoUrl });
+      }
+    }
+
+    const resolveAndExtract = async () => {
+      try {
+        let finalUrl = url;
+        if (url.includes('photos.app.goo.gl')) {
+          finalUrl = await resolveShortUrl(url);
+        }
+
+        const album = await extractAlbum(finalUrl);
+        if (!album || !album.photos) {
+          return res.status(404).json({ error: 'Album not found or empty' });
+        }
+
+        const videos = album.photos.filter(p => p.mimeType && p.mimeType.startsWith('video/'));
+        if (videos.length === 0) {
+          return res.status(404).json({ error: 'No videos found in album' });
+        }
+
+        const rawVideoUrl = videos[0].url;
+        const streamUrl = `${rawVideoUrl}=m22`;
+
+        photosCache.set(url, {
+          videoUrl: streamUrl,
+          timestamp: Date.now()
+        });
+
+        res.json({ videoUrl: streamUrl });
+      } catch (err) {
+        console.error('Error resolving Google Photos URL:', err);
+        res.status(500).json({ 
+          error: 'Error resolving Google Photos URL',
+          detail: err.message,
+          stack: err.stack
+        });
+      }
+    };
+    resolveAndExtract();
+  });
+
   const path = require('path');
   const authRoutes = require('./routes/auth');
   const { authenticateToken } = authRoutes;
