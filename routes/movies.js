@@ -51,6 +51,7 @@ router.get('/', async (req, res) => {
           genre: m.genre,
           partsCount,
           episodesCount,
+          parts: partsArr,
           createdAt: m.created_at,
           watchProgress: null
         };
@@ -83,6 +84,7 @@ router.get('/', async (req, res) => {
         genre: m.genre,
         partsCount,
         episodesCount,
+        parts: partsArr,
         createdAt: m.created_at,
         watchProgress: {
           lastWatchedAt: latestLog.last_watched_at,
