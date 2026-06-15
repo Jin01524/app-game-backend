@@ -204,6 +204,15 @@ async function initDb() {
     )
   `);
 
+  await runSql(`
+    CREATE TABLE IF NOT EXISTS movie_stream_caches (
+      url TEXT PRIMARY KEY,
+      video_url TEXT,
+      qualities TEXT,
+      expires_at TIMESTAMP
+    )
+  `);
+
   // ── Performance Indexes ─────────────────────────────────────────────────────
   await runSql(`CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)`);
   await runSql(`CREATE INDEX IF NOT EXISTS idx_inventory_user_id   ON user_inventory(user_id)`);

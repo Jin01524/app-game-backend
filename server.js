@@ -258,22 +258,29 @@ initDb().then(() => {
     return videos;
   }
 
-  app.get('/api/movies/photos-url', (req, res) => {
+  app.get('/api/movies/photos-url', async (req, res) => {
     const { url } = req.query;
     if (!url) {
       return res.status(400).json({ error: 'Missing url parameter' });
     }
 
-    if (photosCache.has(url)) {
-      const cached = photosCache.get(url);
-      const ttl = cached.isFallback ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000;
-      if (Date.now() - cached.timestamp < ttl) {
+    // Kiểm tra cache từ Cơ sở dữ liệu PostgreSQL (không lo mất khi server restart)
+    try {
+      const cached = await getOne(
+        'SELECT video_url, qualities, expires_at FROM movie_stream_caches WHERE url = ?',
+        [url]
+      );
+      if (cached && new Date(cached.expires_at) > new Date()) {
+        const parsedQualities = JSON.parse(cached.qualities || '{}');
+        const availableQualities = Object.keys(parsedQualities).filter(q => parsedQualities[q].available);
         return res.json({
-          videoUrl: cached.videoUrl,
-          qualities: cached.qualities,
-          availableQualities: cached.availableQualities
+          videoUrl: cached.video_url,
+          qualities: parsedQualities,
+          availableQualities
         });
       }
+    } catch (dbErr) {
+      console.error('[photos-url] Cache DB read error:', dbErr);
     }
 
     const resolveAndExtract = async () => {
@@ -335,16 +342,26 @@ initDb().then(() => {
 
         const defaultStreamUrl = qualitiesMap[defaultQuality].url;
         
-        // Nếu các bản HD (1080p/720p) chưa sẵn sàng thì giảm TTL để sớm quét lại
+        // Nếu các bản HD (1080p/720p) chưa sẵn sàng thì giảm TTL xuống 10 phút
         const isFallback = !qualitiesMap['1080p'].available || !qualitiesMap['720p'].available;
+        const ttlMs = isFallback ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000;
+        const expiresAt = new Date(Date.now() + ttlMs);
 
-        photosCache.set(url, {
-          videoUrl: defaultStreamUrl,
-          qualities: qualitiesMap,
-          availableQualities: availableQualities,
-          timestamp: Date.now(),
-          isFallback
-        });
+        // Lưu thông tin giải mã vào cơ sở dữ liệu
+        try {
+          await runSql(
+            `INSERT INTO movie_stream_caches (url, video_url, qualities, expires_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (url)
+             DO UPDATE SET
+               video_url = EXCLUDED.video_url,
+               qualities = EXCLUDED.qualities,
+               expires_at = EXCLUDED.expires_at`,
+            [url, defaultStreamUrl, JSON.stringify(qualitiesMap), expiresAt]
+          );
+        } catch (dbErr) {
+          console.error('[photos-url] Cache DB write error:', dbErr);
+        }
 
         res.json({
           videoUrl: defaultStreamUrl,
