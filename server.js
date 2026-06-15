@@ -268,7 +268,11 @@ initDb().then(() => {
       const cached = photosCache.get(url);
       const ttl = cached.isFallback ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000;
       if (Date.now() - cached.timestamp < ttl) {
-        return res.json({ videoUrl: cached.videoUrl });
+        return res.json({
+          videoUrl: cached.videoUrl,
+          qualities: cached.qualities,
+          availableQualities: cached.availableQualities
+        });
       }
     }
 
@@ -282,33 +286,71 @@ initDb().then(() => {
         }
 
         const baseUrl = videos[0].baseUrl;
-        let streamUrl = videos[0].videoUrl; // defaults to =m22
-        let isFallback = false;
+        
+        // Cấu hình các chất lượng phim cần kiểm tra
+        const qualitySpecs = [
+          { name: '1080p', suffix: '=m37' },
+          { name: '720p', suffix: '=m22' },
+          { name: '360p', suffix: '=m18' }
+        ];
 
-        // Kiểm tra xem luồng chất lượng cao =m22 đã được sinh ra chưa (đặc biệt với phim mới thêm)
-        try {
-          const checkRes = await axios.head(`${baseUrl}=m22`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
-            timeout: 1500
-          });
-          if (checkRes.status !== 200 && checkRes.status !== 206) {
-            streamUrl = `${baseUrl}=m18`;
-            isFallback = true;
-            console.log(`[photos-url] =m22 status ${checkRes.status} is not 200/206. Falling back to =m18`);
+        // Kiểm tra đồng thời xem Google Photos đã xử lý xong chất lượng nào
+        const checkResults = await Promise.all(
+          qualitySpecs.map(async (spec) => {
+            try {
+              const checkRes = await axios.head(`${baseUrl}${spec.suffix}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+                timeout: 1500
+              });
+              if (checkRes.status === 200 || checkRes.status === 206) {
+                return { name: spec.name, url: `${baseUrl}${spec.suffix}`, available: true };
+              }
+            } catch (e) {
+              // Bỏ qua lỗi
+            }
+            return { name: spec.name, url: `${baseUrl}${spec.suffix}`, available: false };
+          })
+        );
+
+        const qualitiesMap = {};
+        const availableQualities = [];
+        checkResults.forEach(r => {
+          qualitiesMap[r.name] = { url: r.url, available: r.available };
+          if (r.available) {
+            availableQualities.push(r.name);
           }
-        } catch (e) {
-          streamUrl = `${baseUrl}=m18`;
-          isFallback = true;
-          console.log(`[photos-url] =m22 check failed (likely 404/not processed yet): ${e.message}. Falling back to =m18`);
+        });
+
+        // Chọn chất lượng phát mặc định tốt nhất sẵn có
+        let defaultQuality = '720p';
+        if (qualitiesMap['720p'].available) {
+          defaultQuality = '720p';
+        } else if (qualitiesMap['1080p'].available) {
+          defaultQuality = '1080p';
+        } else if (qualitiesMap['360p'].available) {
+          defaultQuality = '360p';
+        } else {
+          defaultQuality = '360p'; // Mặc định nếu chưa chất lượng nào sẵn sàng
         }
 
+        const defaultStreamUrl = qualitiesMap[defaultQuality].url;
+        
+        // Nếu các bản HD (1080p/720p) chưa sẵn sàng thì giảm TTL để sớm quét lại
+        const isFallback = !qualitiesMap['1080p'].available || !qualitiesMap['720p'].available;
+
         photosCache.set(url, {
-          videoUrl: streamUrl,
+          videoUrl: defaultStreamUrl,
+          qualities: qualitiesMap,
+          availableQualities: availableQualities,
           timestamp: Date.now(),
           isFallback
         });
 
-        res.json({ videoUrl: streamUrl });
+        res.json({
+          videoUrl: defaultStreamUrl,
+          qualities: qualitiesMap,
+          availableQualities: availableQualities
+        });
       } catch (err) {
         console.error('Error resolving Google Photos URL:', err);
         res.status(500).json({ 
