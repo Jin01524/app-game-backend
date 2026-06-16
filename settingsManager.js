@@ -26,7 +26,17 @@ async function loadSettings() {
       await runSql('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', [key, defaultSettings[key].toString()]);
     }
   });
-  console.log('Settings loaded:', settingsCache);
+  // Sanitize for clean logging
+  const loggedSettings = { ...settingsCache };
+  if (loggedSettings.photos_album_data) {
+    try {
+      const album = JSON.parse(loggedSettings.photos_album_data);
+      loggedSettings.photos_album_data = `[Array of ${album.length} items]`;
+    } catch (e) {
+      loggedSettings.photos_album_data = `[String of ${loggedSettings.photos_album_data.length} chars]`;
+    }
+  }
+  console.log('Settings loaded:', loggedSettings);
 
   // Auto-reload mỗi 10 phút để sync với thay đổi từ admin panel
   if (!loadSettings._intervalSet) {
