@@ -227,8 +227,8 @@ router.post('/harvest', requireAuth, async (req, res) => {
   const amount = getYield(farm.level);
   const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
   
-  let backpack = parseJSON(user.backpack, [null, null]);
-  const addResult = addToBackpack(backpack, 'lua', amount, 2);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
+  const addResult = addToBackpack(backpack, 'lua', amount, 4);
   
   if (!addResult.success) {
     return res.status(400).json({ error: 'Balo đã đầy!' });
@@ -471,7 +471,7 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
   }
 
   const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
-  let backpack = parseJSON(user.backpack, [null, null]);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
 
   // Count occurrences
   const counts = {};
@@ -484,7 +484,7 @@ router.post('/collect-cage-products', requireAuth, async (req, res) => {
 
   // Try to add to backpack
   for (const [item_id, quantity] of Object.entries(counts)) {
-    const resAdd = addToBackpack(backpack, item_id, quantity, 2);
+    const resAdd = addToBackpack(backpack, item_id, quantity, 4);
     backpack = resAdd.backpack;
     if (resAdd.remaining > 0) {
       full = true;
