@@ -111,7 +111,7 @@ router.post('/sell', async (req, res) => {
   // Update quest progress for selling wheat
   await questManager.updateQuestProgress(userId, 'ban_lua', sellQty);
 
-  res.json({ success: true, earned: totalEarned, currentXu: (user.xu ?? 0) + totalEarned });
+  res.json({ success: true, earned: totalEarned, currentXu: (user.xu ?? 0) + totalEarned, backpack: newBackpack });
 });
 
 router.post('/buy-animal', async (req, res) => {
