@@ -186,9 +186,19 @@ async function initDb() {
       country TEXT,
       genre TEXT,
       parts TEXT DEFAULT '[]',
+      publish_year INTEGER,
+      cover_background TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migrations for existing databases
+  try {
+    await runSql('ALTER TABLE movies ADD COLUMN publish_year INTEGER');
+  } catch (e) {}
+  try {
+    await runSql('ALTER TABLE movies ADD COLUMN cover_background TEXT');
+  } catch (e) {}
 
   await runSql(`
     CREATE TABLE IF NOT EXISTS movie_watch_logs (

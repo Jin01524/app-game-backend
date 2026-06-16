@@ -185,7 +185,7 @@ router.post('/movies/upload', upload.single('cover'), (req, res) => {
 
 // POST /api/admin/movies - Tạo phim mới
 router.post('/movies', async (req, res) => {
-  const { title, description, coverUrl, tags, country, genre, parts } = req.body;
+  const { title, description, coverUrl, tags, country, genre, parts, publishYear, coverBackground } = req.body;
   if (!title) {
     return res.status(400).json({ error: 'Tên phim không được bỏ trống' });
   }
@@ -193,8 +193,8 @@ router.post('/movies', async (req, res) => {
   const partsStr = typeof parts === 'string' ? parts : JSON.stringify(parts || []);
   try {
     await runSql(
-      'INSERT INTO movies (title, description, cover_url, tags, country, genre, parts) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [title, description || '', coverUrl || '', tags || '', country || '', genre || '', partsStr]
+      'INSERT INTO movies (title, description, cover_url, tags, country, genre, parts, publish_year, cover_background) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [title, description || '', coverUrl || '', tags || '', country || '', genre || '', partsStr, publishYear ? parseInt(publishYear) : null, coverBackground || null]
     );
     await logActivity(req.user.username, 'admin_create_movie', `Tạo phim: ${title}`);
     res.json({ success: true, message: 'Đăng phim mới thành công!' });
@@ -207,7 +207,7 @@ router.post('/movies', async (req, res) => {
 // PUT /api/admin/movies/:id - Cập nhật phim
 router.put('/movies/:id', async (req, res) => {
   const { id } = req.params;
-  const { title, description, coverUrl, tags, country, genre, parts } = req.body;
+  const { title, description, coverUrl, tags, country, genre, parts, publishYear, coverBackground } = req.body;
   if (!title) {
     return res.status(400).json({ error: 'Tên phim không được bỏ trống' });
   }
@@ -220,8 +220,8 @@ router.put('/movies/:id', async (req, res) => {
     }
 
     await runSql(
-      'UPDATE movies SET title = ?, description = ?, cover_url = ?, tags = ?, country = ?, genre = ?, parts = ? WHERE id = ?',
-      [title, description || '', coverUrl || '', tags || '', country || '', genre || '', partsStr, id]
+      'UPDATE movies SET title = ?, description = ?, cover_url = ?, tags = ?, country = ?, genre = ?, parts = ?, publish_year = ?, cover_background = ? WHERE id = ?',
+      [title, description || '', coverUrl || '', tags || '', country || '', genre || '', partsStr, publishYear ? parseInt(publishYear) : null, coverBackground || null, id]
     );
     await logActivity(req.user.username, 'admin_update_movie', `Cập nhật phim ID ${id}: ${title}`);
     res.json({ success: true, message: 'Cập nhật thông tin phim thành công!' });

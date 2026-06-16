@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
   const userId = req.user.id;
   try {
     const movies = await getAll(
-      'SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies ORDER BY id DESC'
+      'SELECT id, title, description, cover_url, tags, country, genre, parts, publish_year, cover_background, created_at FROM movies ORDER BY id DESC'
     );
 
     // Lấy tất cả logs xem của user này một lần duy nhất
@@ -52,6 +52,8 @@ router.get('/', async (req, res) => {
           partsCount,
           episodesCount,
           parts: partsArr,
+          publishYear: m.publish_year,
+          coverBackground: m.cover_background,
           createdAt: m.created_at,
           watchProgress: null
         };
@@ -85,6 +87,8 @@ router.get('/', async (req, res) => {
         partsCount,
         episodesCount,
         parts: partsArr,
+        publishYear: m.publish_year,
+        coverBackground: m.cover_background,
         createdAt: m.created_at,
         watchProgress: {
           lastWatchedAt: latestLog.last_watched_at,
@@ -109,7 +113,7 @@ router.get('/:id', async (req, res) => {
   const userId = req.user.id;
   try {
     const movie = await getOne(
-      'SELECT id, title, description, cover_url, tags, country, genre, parts, created_at FROM movies WHERE id = ?',
+      'SELECT id, title, description, cover_url, tags, country, genre, parts, publish_year, cover_background, created_at FROM movies WHERE id = ?',
       [movieId]
     );
     if (!movie) {
@@ -134,6 +138,8 @@ router.get('/:id', async (req, res) => {
       country: movie.country,
       genre: movie.genre,
       parts: JSON.parse(movie.parts || '[]'),
+      publishYear: movie.publish_year,
+      coverBackground: movie.cover_background,
       watchLogs: logs.map(l => ({
         partIndex: l.part_index,
         episodeIndex: l.episode_index,
