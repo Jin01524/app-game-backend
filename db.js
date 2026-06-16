@@ -278,7 +278,7 @@ async function decayUserEnergy(userId) {
   const lastUpdate = new Date(user.energy_updated_at || now);
   const elapsedMs = now.getTime() - lastUpdate.getTime();
   
-  const decayInterval = 2 * 60 * 1000; // 2 minutes
+  const decayInterval = 10 * 60 * 1000; // 10 minutes
   const decayCount = Math.floor(elapsedMs / decayInterval);
 
   if (decayCount > 0) {
