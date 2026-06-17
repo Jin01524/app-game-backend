@@ -122,7 +122,7 @@ router.get('/:id', async (req, res) => {
 
     // Lấy log xem dở — được tăng tốc bởi composite index idx_watch_logs_user_movie
     const logs = await getAll(
-      'SELECT part_index, episode_index, watched_seconds, last_position_seconds FROM movie_watch_logs WHERE user_id = ? AND movie_id = ?',
+      'SELECT part_index, episode_index, watched_seconds, last_position_seconds FROM movie_watch_logs WHERE user_id = ? AND movie_id = ? ORDER BY last_watched_at DESC',
       [userId, movieId]
     );
 
