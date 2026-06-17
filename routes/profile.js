@@ -689,7 +689,7 @@ router.post('/consume', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { slotIdx } = req.body;
 
-  if (slotIdx === undefined || slotIdx === null || slotIdx < 0 || slotIdx > 1) {
+  if (slotIdx === undefined || slotIdx === null || slotIdx < 0 || slotIdx > 3) {
     return res.status(400).json({ error: 'Chỉ số ô balo không hợp lệ' });
   }
 

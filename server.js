@@ -576,7 +576,7 @@ initDb().then(() => {
             const drop = room.drops[dropIndex];
             const user = await getOne('SELECT id, backpack FROM users WHERE username = ?', [socket.playerUsername]);
             if (user) {
-               let backpack = parseJSON(user.backpack, [null, null]);
+               let backpack = parseJSON(user.backpack, [null, null, null, null]);
                const result = addToBackpack(backpack, drop.item_id, 1);
                if (result.success) {
                  await runSql('UPDATE users SET backpack = ? WHERE id = ?', [JSON.stringify(result.backpack), user.id]);

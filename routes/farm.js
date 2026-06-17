@@ -275,7 +275,7 @@ router.post('/place-animal', requireAuth, async (req, res) => {
   if (!animal) return res.status(400).json({ error: 'Vui lòng chọn vật nuôi' });
   
   const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
-  let backpack = parseJSON(user.backpack, [null, null]);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
   let hasInBackpack = getBackpackItemCount(backpack, animal) > 0;
   
   let hasInInventory = false;
@@ -378,7 +378,7 @@ router.post('/feed', requireAuth, async (req, res) => {
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Số lượng không hợp lệ' });
 
   const user = await getOne('SELECT backpack FROM users WHERE id = ?', [userId]);
-  let backpack = parseJSON(user.backpack, [null, null]);
+  let backpack = parseJSON(user.backpack, [null, null, null, null]);
   const romCount = getBackpackItemCount(backpack, 'rom');
   const invRow = await getOne("SELECT quantity FROM user_inventory WHERE user_id = ? AND item_id = 'rom'", [userId]);
   const romInvCount = invRow ? invRow.quantity : 0;

@@ -40,13 +40,13 @@ function setupTradeSockets(io) {
       const user1 = await getOne('SELECT backpack FROM users WHERE username = ?', [p1]);
       const user2 = await getOne('SELECT backpack FROM users WHERE username = ?', [p2]);
 
-      const bp1 = parseJSON(user1?.backpack, [null, null]);
-      const bp2 = parseJSON(user2?.backpack, [null, null]);
+      const bp1 = parseJSON(user1?.backpack, [null, null, null, null]);
+      const bp2 = parseJSON(user2?.backpack, [null, null, null, null]);
 
       const tradeId = uuidv4();
       activeTrades[tradeId] = {
-        p1: { socketId: p1Socket.id, username: p1, items: [], xu: 0, ready: false, maxSlots: bp1.length || 2 },
-        p2: { socketId: socket.id, username: p2, items: [], xu: 0, ready: false, maxSlots: bp2.length || 2 },
+        p1: { socketId: p1Socket.id, username: p1, items: [], xu: 0, ready: false, maxSlots: bp1.length || 4 },
+        p2: { socketId: socket.id, username: p2, items: [], xu: 0, ready: false, maxSlots: bp2.length || 4 },
         status: 'active'
       };
       
